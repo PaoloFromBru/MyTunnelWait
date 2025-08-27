@@ -39,3 +39,4 @@ functions/node_modules
 
 # VSCode settings
 .vscode/
+.env.local

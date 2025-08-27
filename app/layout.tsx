@@ -24,15 +24,19 @@ export const metadata: Metadata = {
       { url: "/apple-touch-icon-180.png", sizes: "180x180" },
     ],
   },
-  themeColor: "#111111",
+  // themeColor: "#111111",
   applicationName: "My Tunnel Wait",
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#111111",
-  colorScheme: "light",
+  // themeColor: "#111111",
+  // colorScheme: "light",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#000000" },
+  ],
 };
 
 export default function RootLayout({
