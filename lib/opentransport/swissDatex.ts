@@ -1,11 +1,12 @@
 // lib/opentransport/swissDatex.ts
+// Client per opentransportdata.swiss DATEX II (TrafficSituations Pull)
 import "server-only";
 import { XMLParser } from "fast-xml-parser";
 
 export type DatexSituation = Record<string, any>;
 
 export interface PullOptions {
-  ifModifiedSince?: string;
+  ifModifiedSince?: string; // ISO string UTC
   soapAction?: string;
 }
 
@@ -14,6 +15,20 @@ const ENDPOINT =
 const SOAP_ACTION_DEFAULT =
   "http://opentransportdata.swiss/TDP/Soap_Datex2/Pull/v1/pullTrafficMessages";
 
+/** Tipo semplificato per le situazioni */
+export type SituationLite = {
+  id?: string;
+  version?: string | number;
+  probabilityOfOccurrence?: string;
+  validityStatus?: string;
+  severity?: string;
+  firstComment?: string;
+  roadNames?: string[];
+  locationSummary?: string;
+  raw: DatexSituation;
+};
+
+/** Costruisce l’envelope SOAP 1.1 */
 function buildEnvelope(): string {
   return `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
@@ -43,7 +58,10 @@ function buildEnvelope(): string {
 </soap:Envelope>`;
 }
 
-export async function fetchTrafficSituationsXML(opts: PullOptions = {}): Promise<string> {
+/** Fetch raw XML dal servizio SOAP */
+export async function fetchTrafficSituationsXML(
+  opts: PullOptions = {}
+): Promise<string> {
   const token = process.env.OTD_SWISS_TOKEN;
   if (!token) throw new Error("Missing OTD_SWISS_TOKEN env");
 
@@ -54,14 +72,25 @@ export async function fetchTrafficSituationsXML(opts: PullOptions = {}): Promise
   };
   if (opts.ifModifiedSince) headers["If-Modified-Since"] = opts.ifModifiedSince;
 
-  const res = await fetch(ENDPOINT, { method: "POST", headers, body: buildEnvelope(), cache: "no-store" });
+  const res = await fetch(ENDPOINT, {
+    method: "POST",
+    headers,
+    body: buildEnvelope(),
+    cache: "no-store",
+  });
+
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
-    throw new Error(`SOAP HTTP ${res.status}: ${res.statusText}${txt ? ` - ${txt.slice(0, 500)}` : ""}`);
+    throw new Error(
+      `SOAP HTTP ${res.status}: ${res.statusText}${
+        txt ? ` - ${txt.slice(0, 500)}` : ""
+      }`
+    );
   }
   return res.text();
 }
 
+/** Parse XML → oggetto JS */
 export function parseDatex(xml: string): any {
   const parser = new XMLParser({
     ignoreAttributes: false,
@@ -81,31 +110,36 @@ function asText(v: any): string {
   if (typeof v === "number" || typeof v === "boolean") return String(v);
   if (typeof v === "object") {
     // DATEX: { "#text": "...", "type": "dx223:..." }
-    if ("#text" in v && (typeof v["#text"] === "string" || typeof v["#text"] === "number" || typeof v["#text"] === "boolean")) {
+    if (
+      "#text" in v &&
+      (typeof v["#text"] === "string" ||
+        typeof v["#text"] === "number" ||
+        typeof v["#text"] === "boolean")
+    ) {
       return String(v["#text"]);
     }
-    if ("value" in v && (typeof (v as any).value === "string" || typeof (v as any).value === "number" || typeof (v as any).value === "boolean")) {
+    if (
+      "value" in v &&
+      (typeof (v as any).value === "string" ||
+        typeof (v as any).value === "number" ||
+        typeof (v as any).value === "boolean")
+    ) {
       return String((v as any).value);
     }
-    try { return JSON.stringify(v); } catch { return String(v); }
+    try {
+      return JSON.stringify(v);
+    } catch {
+      return String(v);
+    }
   }
   return String(v);
 }
-const toArr = <T>(v: T | T[] | undefined | null): T[] => Array.isArray(v) ? v : v != null ? [v] : [];
+const toArr = <T>(v: T | T[] | undefined | null): T[] =>
+  Array.isArray(v) ? v : v != null ? [v] : [];
 
 // --- extraction
 export function extractSituations(datexJS: any): {
-  situations: Array<{
-    id?: string;
-    version?: string | number;
-    probabilityOfOccurrence?: string;
-    validityStatus?: string;
-    severity?: string;
-    firstComment?: string;
-    roadNames?: string[];
-    locationSummary?: string;
-    raw: DatexSituation;
-  }>;
+  situations: SituationLite[];
   publicationTime?: string;
 } {
   const root =
@@ -116,12 +150,12 @@ export function extractSituations(datexJS: any): {
     datexJS;
 
   const pub = root?.payloadPublication ?? root?.PayloadPublication;
-  const publicationTime = asText(pub?.publicationTime); // <-- NORMALIZZATO
+  const publicationTime = asText(pub?.publicationTime); // normalizzato
 
   let rawSituations = pub?.situation ?? [];
   if (!Array.isArray(rawSituations)) rawSituations = rawSituations ? [rawSituations] : [];
 
-  const situations = rawSituations.map((s: any) => {
+  const situations: SituationLite[] = rawSituations.map((s: any) => {
     const id = s?.id;
     const version = s?.version;
     const header = s?.headerInformation ?? {};
@@ -135,23 +169,28 @@ export function extractSituations(datexJS: any): {
     const comments = [
       ...toArr(s?.generalPublicComment?.comment),
       ...toArr(s?.situationRecord?.generalPublicComment?.comment),
-    ].map(asText).filter(Boolean);
+    ]
+      .map(asText)
+      .filter(Boolean);
 
     const roadNames = [
       ...toArr(s?.situationRecord?.groupOfLocations?.tpegLinearLocation?.name),
       ...toArr(s?.situationRecord?.groupOfLocations?.tpegNonLinearLocation?.name),
-    ].map(asText).filter(Boolean);
+    ]
+      .map(asText)
+      .filter(Boolean);
 
     const locationSummary =
       asText(s?.situationRecord?.groupOfLocations?.tpegLinearLocation?.toString) ||
-      roadNames[0] || undefined;
+      roadNames[0] ||
+      undefined;
 
     return {
       id,
       version,
       probabilityOfOccurrence,
       validityStatus,
-      severity: asText(severityRaw) || undefined, // <-- NORMALIZZATO
+      severity: asText(severityRaw) || undefined, // normalizzato
       firstComment: comments[0],
       roadNames: roadNames.length ? roadNames : undefined,
       locationSummary,
@@ -163,19 +202,23 @@ export function extractSituations(datexJS: any): {
 }
 
 // --- filter
-export function filterForGotthard(
-  situations: Array<{ raw: any; firstComment?: string; roadNames?: string[]; locationSummary?: string }>
-) {
+export function filterForGotthard(situations: SituationLite[]): SituationLite[] {
   const KW = [
-    "Gotthard","Gottardo","San Gottardo","Sankt Gotthard",
-    "Galleria del San Gottardo","Tunnel du Gothard","Gotthardtunnel","A2"
+    "Gotthard",
+    "Gottardo",
+    "San Gottardo",
+    "Sankt Gotthard",
+    "Galleria del San Gottardo",
+    "Tunnel du Gothard",
+    "Gotthardtunnel",
+    "A2",
   ];
   const hasKW = (txt: any) => {
     const s = asText(txt).toLowerCase();
-    return s && KW.some(k => s.includes(k.toLowerCase()));
+    return s && KW.some((k) => s.includes(k.toLowerCase()));
   };
 
-  return situations.filter(s => {
+  return situations.filter((s) => {
     if (hasKW(s.firstComment)) return true;
     if (s.roadNames?.some(hasKW)) return true;
     if (hasKW(s.locationSummary)) return true;
