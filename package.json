@@ -8,10 +8,13 @@
     "start": "next start",
     "cron:ping": "node scripts/ping.js"
   },
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.56.0",
+    "fast-xml-parser": "^5.2.5",
     "next": "15.3.5",
     "react": "18.3.1",
     "react-dom": "18.3.1",
