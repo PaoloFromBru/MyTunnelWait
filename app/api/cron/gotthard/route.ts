@@ -7,75 +7,121 @@ import {
   filterForGotthard,
   type SituationLite,
 } from "../../../../lib/opentransport/swissDatex";
+import { supabaseAdmin } from "../../../../lib/supabaseAdmin";
 
-// Evita qualsiasi caching lato Next
 export const dynamic = "force-dynamic";
 
-export async function GET(req: Request) {
-  try {
-    const url = new URL(req.url);
+function toRecord(s: SituationLite) {
+  return {
+    id: s.id!,
+    version: typeof s.version === "number" ? s.version : Number(s.version ?? 0),
+    publication_time: s.raw?.publicationTime ? new Date(s.raw.publicationTime as any).toISOString() : null,
+    severity: s.severity ?? null,
+    comment: s.firstComment ?? null,
+    roads: s.roadNames ?? null,
+    location: s.locationSummary ?? null,
+    source: "opentransport",
+    raw: s.raw,
+  };
+}
 
-    // Protezione semplice con chiave (imposta CRON_KEY nell'env di produzione)
+// upsert in chunk per non superare limiti payload
+async function upsertSituations(recs: ReturnType<typeof toRecord>[]) {
+  const CHUNK = 500;
+  let saved = 0;
+  for (let i = 0; i < recs.length; i += CHUNK) {
+    const slice = recs.slice(i, i + CHUNK);
+    const { error, data } = await supabaseAdmin
+      .from("traffic_situations")
+      .upsert(slice, { onConflict: "id,version", ignoreDuplicates: false })
+      .select("id,version");
+    if (error) throw error;
+    saved += data?.length ?? 0;
+  }
+  return saved;
+}
+
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+
+  try {
+    // protezione cron
     const providedKey = url.searchParams.get("key");
     const requiredKey = process.env.CRON_KEY;
     if (requiredKey && providedKey !== requiredKey) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
 
-    // Query params
     const sinceParam = url.searchParams.get("since") || undefined;
     const wantAll = url.searchParams.has("all");
+    const dryRun = url.searchParams.has("dryRun"); // utile per test: non salva
 
-    // Se non passi "since", prendo le ultime 6 ore (UTC)
     const ifModifiedSince =
       sinceParam ??
       new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
 
-    // (facoltativo) log minimale per debuggare i run del cron
-    // console.log(`[cron] /api/cron/gotthard since=${ifModifiedSince} at=${new Date().toISOString()}`);
-
-    // 1) Fetch SOAP XML
+    // 1) fetch + parse
     const xml = await fetchTrafficSituationsXML({ ifModifiedSince });
-
-    // 2) Parse XML -> JS
     const js = parseDatex(xml);
-
-    // 3) Estrarre situazioni normalizzate
     const { situations, publicationTime } = extractSituations(js);
 
-    // 4) Filtro Gottardo (a meno che non sia richiesto "all")
+    // 2) filtro
     const filtered: SituationLite[] = wantAll ? situations : filterForGotthard(situations);
 
-    // 5) Risposta JSON pulita per la UI/cron
+    // 3) salva su Supabase (a meno di dryRun)
+    let savedCount = 0;
+    if (!dryRun && filtered.length) {
+      const records = filtered
+        .filter((s) => s.id) // robustezza
+        .map(toRecord);
+      savedCount = await upsertSituations(records);
+    }
+
+    // 4) logga il run
+    if (!dryRun) {
+      await supabaseAdmin.from("traffic_runs").insert({
+        since_param: new Date(ifModifiedSince).toISOString(),
+        publication_time: publicationTime ? new Date(publicationTime).toISOString() : null,
+        fetched_count: situations.length,
+        saved_count: savedCount,
+        note: wantAll ? "all=1" : null,
+      });
+    }
+
     return NextResponse.json(
       {
-        publicationTime,          // string ISO, es: "2025-08-28T14:25:40.786413Z"
+        ok: true,
+        publicationTime,
+        since: ifModifiedSince,
+        fetched: situations.length,
+        saved: savedCount,
         count: filtered.length,
-        since: ifModifiedSince,   // ISO usata per If-Modified-Since
-        items: filtered.map((s) => ({
+        sample: filtered.slice(0, 3).map((s) => ({
           id: s.id,
           version: s.version,
-          severity: s.severity,       // stringa normalizzata (es. "real")
+          severity: s.severity,
           comment: s.firstComment,
           roads: s.roadNames,
           location: s.locationSummary,
-          // raw: s.raw, // scommenta se vuoi ispezionare lato client
         })),
       },
-      {
-        status: 200,
-        headers: {
-          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-          "Content-Type": "application/json; charset=utf-8",
-        },
-      }
+      { status: 200, headers: { "Cache-Control": "no-store" } }
     );
   } catch (err: any) {
-    const msg = (err?.message ?? "Unknown error").slice(0, 8000);
-    // console.error("[cron] gotthard error:", msg);
-    return NextResponse.json(
-      { error: msg },
-      { status: 502, headers: { "Cache-Control": "no-store" } }
-    );
+    const msg = (err?.message ?? String(err)).slice(0, 8000);
+    // prova a loggare comunque il run fallito
+    try {
+      await supabaseAdmin.from("traffic_runs").insert({
+        note: `ERROR: ${msg}`,
+      });
+    } catch {}
+    // dopo aver calcolato savedCount e inserito traffic_runs
+    try {
+      await supabaseAdmin.rpc("refresh_heatmap_weekly");
+    } catch (e) {
+      // non bloccare il cron se fallisce il refresh
+      console.warn("refresh_heatmap_weekly failed:", (e as any)?.message);
+    }
+    return NextResponse.json({ ok: false, error: msg }, { status: 502 });
   }
 }
