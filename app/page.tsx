@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import type { WaitItem, TunnelId } from "@/types";
+import Link from "next/link";
 
 const STORAGE_KEY = "mtw.waits.v1";
 
@@ -58,7 +59,7 @@ export default function Home() {
   const Card = ({
     title, href, desc, emoji,
   }: { title: string; href: string; desc: string; emoji: string }) => (
-    <a
+    <Link
       href={href}
       className="group rounded-2xl border bg-white p-5 shadow-sm hover:shadow transition flex flex-col"
     >
@@ -68,7 +69,7 @@ export default function Home() {
       <div className="mt-3 text-indigo-600 text-sm opacity-0 group-hover:opacity-100">
         Apri →
       </div>
-    </a>
+    </Link>
   );
 
   const Kpi = ({ label, value }: { label: string; value: string | number }) => (
