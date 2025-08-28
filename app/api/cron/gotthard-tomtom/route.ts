@@ -46,15 +46,15 @@ function extraSeconds(flow:any): number | null {
   return 0
 }
 
+// DOPO: (somma con trim 15%)
 function summarizeExtras(extras:number[]) {
-  const pos = extras.filter(x => typeof x === 'number' && x >= 0)
+  const pos = extras.filter(x => Number.isFinite(x) && x! >= 0)
   if (!pos.length) return 0
-  // media robusta (trim al 20%)
   const sorted = pos.slice().sort((a,b)=>a-b)
-  const cut = Math.floor(sorted.length * 0.2)
+  const cut = Math.floor(sorted.length * 0.15)
   const trimmed = sorted.slice(cut, sorted.length - cut || undefined)
-  const avg = trimmed.reduce((s,x)=>s+x,0) / trimmed.length
-  return Math.max(0, Math.round(avg))
+  const sum = trimmed.reduce((s,x)=>s + x, 0)     // ← somma, non media
+  return Math.max(0, Math.round(sum))
 }
 
 export async function GET() {
