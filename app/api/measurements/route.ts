@@ -20,7 +20,6 @@ export async function POST(req: NextRequest) {
     const ua = req.headers.get("user-agent") ?? undefined;
     const ip =
       req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-      // @ts-expect-error: next/internal
       (req as any).ip ||
       undefined;
 
