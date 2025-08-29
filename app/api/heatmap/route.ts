@@ -10,7 +10,8 @@ function empty(): number[][] {
 function pgDowToMonFirst(pgDow: number) { return pgDow === 0 ? 6 : pgDow - 1; }
 
 export async function GET() {
-  const { data, error } = await supabaseAdmin
+  const supabase = supabaseAdmin();
+  const { data, error } = await supabase
     .from("mv_traffic_heatmap_weekly")
     .select("dow,hour,category,events");
 

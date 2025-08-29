@@ -27,11 +27,12 @@ function toRecord(s: SituationLite) {
 
 // upsert in chunk per non superare limiti payload
 async function upsertSituations(recs: ReturnType<typeof toRecord>[]) {
+  const supabase = supabaseAdmin();
   const CHUNK = 500;
   let saved = 0;
   for (let i = 0; i < recs.length; i += CHUNK) {
     const slice = recs.slice(i, i + CHUNK);
-    const { error, data } = await supabaseAdmin
+    const { error, data } = await supabase
       .from("traffic_situations")
       .upsert(slice, { onConflict: "id,version", ignoreDuplicates: false })
       .select("id,version");
@@ -43,6 +44,7 @@ async function upsertSituations(recs: ReturnType<typeof toRecord>[]) {
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
+  const supabase = supabaseAdmin();
 
   try {
     // protezione cron
@@ -79,7 +81,7 @@ export async function GET(req: Request) {
 
     // 4) logga il run
     if (!dryRun) {
-      await supabaseAdmin.from("traffic_runs").insert({
+      await supabase.from("traffic_runs").insert({
         since_param: new Date(ifModifiedSince).toISOString(),
         publication_time: publicationTime ? new Date(publicationTime).toISOString() : null,
         fetched_count: situations.length,
@@ -111,13 +113,13 @@ export async function GET(req: Request) {
     const msg = (err?.message ?? String(err)).slice(0, 8000);
     // prova a loggare comunque il run fallito
     try {
-      await supabaseAdmin.from("traffic_runs").insert({
+      await supabase.from("traffic_runs").insert({
         note: `ERROR: ${msg}`,
       });
     } catch {}
     // dopo aver calcolato savedCount e inserito traffic_runs
     try {
-      await supabaseAdmin.rpc("refresh_heatmap_weekly");
+      await supabase.rpc("refresh_heatmap_weekly");
     } catch (e) {
       // non bloccare il cron se fallisce il refresh
       console.warn("refresh_heatmap_weekly failed:", (e as any)?.message);
