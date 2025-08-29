@@ -1,19 +1,60 @@
 // app/api/measurements/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
-const BodySchema = z.object({
-  tunnel: z.enum(["gotthard", "monte_bianco"]),
-  direction: z.enum(["northbound", "southbound"]),
-  wait_minutes: z.number().int().min(0).max(720),
-  lanes_open: z.number().int().min(0).max(8).optional(),
-  note: z.string().max(1000).optional(),
-  observed_at: z.string().datetime().optional(), // ISO string
-  lat: z.number().min(-90).max(90).optional(),
-  lon: z.number().min(-180).max(180).optional(),
-  // opzionale se usi auth: il client NON la manda, la metteremo noi lato server leggendo il session cookie
-});
+type Tunnel = "gotthard" | "monte_bianco";
+type Direction = "northbound" | "southbound";
+
+interface Body {
+  tunnel: Tunnel;
+  direction: Direction;
+  wait_minutes: number;
+  lanes_open?: number;
+  note?: string;
+  observed_at?: string;
+  lat?: number;
+  lon?: number;
+}
+
+function isEnum<T extends string>(value: any, options: readonly T[]): value is T {
+  return typeof value === "string" && options.includes(value as T);
+}
+
+function isValidBody(data: any): data is Body {
+  if (!data || typeof data !== "object") return false;
+  if (!isEnum<Tunnel>(data.tunnel, ["gotthard", "monte_bianco"])) return false;
+  if (!isEnum<Direction>(data.direction, ["northbound", "southbound"])) return false;
+  if (
+    typeof data.wait_minutes !== "number" ||
+    !Number.isInteger(data.wait_minutes) ||
+    data.wait_minutes < 0 ||
+    data.wait_minutes > 720
+  )
+    return false;
+  if (data.lanes_open !== undefined) {
+    if (
+      typeof data.lanes_open !== "number" ||
+      !Number.isInteger(data.lanes_open) ||
+      data.lanes_open < 0 ||
+      data.lanes_open > 8
+    )
+      return false;
+  }
+  if (data.note !== undefined) {
+    if (typeof data.note !== "string" || data.note.length > 1000) return false;
+  }
+  if (data.observed_at !== undefined) {
+    if (typeof data.observed_at !== "string" || isNaN(Date.parse(data.observed_at)))
+      return false;
+  }
+  if (data.lat !== undefined) {
+    if (typeof data.lat !== "number" || data.lat < -90 || data.lat > 90) return false;
+  }
+  if (data.lon !== undefined) {
+    if (typeof data.lon !== "number" || data.lon < -180 || data.lon > 180) return false;
+  }
+  return true;
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -24,19 +65,15 @@ export async function POST(req: NextRequest) {
       undefined;
 
     const json = await req.json();
-    const parsed = BodySchema.safeParse(json);
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid payload", details: parsed.error.flatten() },
-        { status: 400 }
-      );
+    if (!isValidBody(json)) {
+      return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 
-    const b = parsed.data;
+    const b = json;
 
     // Se usi Supabase Auth lato app, puoi recuperare user id dai cookies session (opzionale)
     // In questo esempio lasciamo reporter_id null
-    const { error, data } = await supabaseAdmin
+    const { error, data } = await supabaseAdmin()
       .from("manual_measurements")
       .insert([
         {
