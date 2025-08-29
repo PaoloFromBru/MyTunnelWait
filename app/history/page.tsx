@@ -43,22 +43,42 @@ export default function HistoryPage() {
   // fetch per line chart
   useEffect(() => {
     let on = true;
-    setLoadingH(true);
-    fetch(`/api/history?hours=${hours}`).then(r=>r.json()).then(j=>{
-      if (on) setRowsH(j.rows || []);
-    }).finally(()=> on && setLoadingH(false));
-    return ()=>{ on=false; };
+    async function load() {
+      setLoadingH(true);
+      try {
+        const r = await fetch(`/api/history?hours=${hours}`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = await r.json();
+        if (on) setRowsH(j.rows || []);
+      } catch {
+        if (on) setRowsH([]);
+      } finally {
+        on && setLoadingH(false);
+      }
+    }
+    load();
+    return () => { on = false; };
   }, [hours]);
 
   // fetch per heatmap
   useEffect(() => {
     let on = true;
-    setLoadingW(true);
-    const h = weeks * 7 * 24;
-    fetch(`/api/history?hours=${h}`).then(r=>r.json()).then(j=>{
-      if (on) setRowsW(j.rows || []);
-    }).finally(()=> on && setLoadingW(false));
-    return ()=>{ on=false; };
+    async function load() {
+      setLoadingW(true);
+      const h = weeks * 7 * 24;
+      try {
+        const r = await fetch(`/api/history?hours=${h}`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = await r.json();
+        if (on) setRowsW(j.rows || []);
+      } catch {
+        if (on) setRowsW([]);
+      } finally {
+        on && setLoadingW(false);
+      }
+    }
+    load();
+    return () => { on = false; };
   }, [weeks]);
 
   // ---------- Line chart (bucket 15′) ----------
