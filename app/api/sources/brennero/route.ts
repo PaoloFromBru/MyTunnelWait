@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 
+export const runtime = 'nodejs';
+export const revalidate = 0;
+
 function extractMinutes(section: string): number | null {
   const m = section.match(/(?:≈\s*)?(\d{1,3})\s*(?:min(?:\.|utes?)?|minuti|')/i);
   return m ? parseInt(m[1], 10) : null;
@@ -31,6 +34,27 @@ function splitSides(html: string) {
   return { north, south };
 }
 
+async function fetchText(url: string, timeoutMs = 8000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      cache: 'no-store',
+      headers: {
+        'user-agent': 'Mozilla/5.0 (compatible; MyTunnelWait/1.0; +https://example.local)',
+        'accept-language': 'it-IT,it;q=0.9,en;q=0.8,de;q=0.7',
+        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'upgrade-insecure-requests': '1',
+      },
+      signal: ctrl.signal,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.text();
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 export async function GET() {
   const urls = [
     // A22 Italia (it)
@@ -42,9 +66,7 @@ export async function GET() {
   let lastErr: any = null;
   for (const url of urls) {
     try {
-      const res = await fetch(url, { cache: 'no-store', headers: { 'user-agent': 'MyTunnelWait/0.1 Next.js' } });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const html = await res.text();
+      const html = await fetchText(url);
       const { north, south } = splitSides(html);
       const nMin = extractMinutes(north);
       const sMin = extractMinutes(south);
@@ -56,10 +78,9 @@ export async function GET() {
           south: sMin,
         });
       }
-    } catch (e) {
+    } catch (e: any) {
       lastErr = e;
     }
   }
   return NextResponse.json({ error: 'Unable to fetch Brennero data', detail: String(lastErr) }, { status: 502 });
 }
-
