@@ -12,11 +12,11 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: "#ffffff",
     icons: [
       // assicurati che questi file esistano in /public/icons
-      { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
-      { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+      { src: "/public/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { src: "/public/icons/icon-512.png", sizes: "512x512", type: "image/png" },
       // per iOS maskable/monochrome (facoltativi)
-      { src: "/icons/icon-512-maskable.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
-      { src: "/icons/icon-512-monochrome.png", sizes: "512x512", type: "image/png", purpose: "monochrome" },
+      { src: "/public/icons/maskable/icon-512-maskable.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+      { src: "/public/icons/maskable/icon-512-monochrome.png", sizes: "512x512", type: "image/png", purpose: "monochrome" },
     ],
   };
 }
