@@ -27,7 +27,7 @@ function toRecord(s: SituationLite) {
 
 // upsert in chunk per non superare limiti payload
 async function upsertSituations(recs: ReturnType<typeof toRecord>[]) {
-  const supabase = supabaseAdmin();
+  const supabase = supabaseAdmin;
   const CHUNK = 500;
   let saved = 0;
   for (let i = 0; i < recs.length; i += CHUNK) {
@@ -44,7 +44,7 @@ async function upsertSituations(recs: ReturnType<typeof toRecord>[]) {
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const supabase = supabaseAdmin();
+  const supabase = supabaseAdmin;
 
   try {
     // protezione cron

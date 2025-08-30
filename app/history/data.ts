@@ -45,7 +45,7 @@ export async function getHistoryRowsSince(
   opts?: { onlySource?: string; dir?: 'N2S' | 'S2N' | 'BOTH' }
 ): Promise<Row[]> {
   const sinceIso = new Date(Date.now() - hours * 3600_000).toISOString();
-  const sb = supabaseAdmin();
+  const sb = supabaseAdmin;
 
   let q = sb
     .from('wait_observations')
@@ -71,7 +71,7 @@ export async function getLatest(
   limit = 50,
   onlySource?: string
 ): Promise<Row[]> {
-  const sb = supabaseAdmin();
+  const sb = supabaseAdmin;
 
   let q = sb
     .from('wait_observations')

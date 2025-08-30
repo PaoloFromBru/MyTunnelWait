@@ -24,7 +24,7 @@ function pgDowToMonFirst(pgDow: number): number {
 
 export default async function Page() {
   // Legge tutta la MV (poche righe: 7*24*2)
-  const supabase = supabaseAdmin();
+  const supabase = supabaseAdmin;
   const { data, error } = await supabase
     .from("mv_traffic_heatmap_weekly")
     .select("dow,hour,category,events");
