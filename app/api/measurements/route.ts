@@ -3,7 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-type Tunnel = "gotthard" | "monte_bianco";
+// Allinea ai valori enum su Supabase (tipo enum: tunnel_id)
+// Valori attesi: 'gotthard' | 'monte_bianco' | 'frejus' | 'brenner'
+type Tunnel = "gotthard" | "monte_bianco" | "frejus" | "brenner";
+// Enum DB traffic_direction sembra accettare solo 'northbound'|'southbound'
 type Direction = "northbound" | "southbound";
 
 interface Body {
@@ -23,7 +26,7 @@ function isEnum<T extends string>(value: any, options: readonly T[]): value is T
 
 function isValidBody(data: any): data is Body {
   if (!data || typeof data !== "object") return false;
-  if (!isEnum<Tunnel>(data.tunnel, ["gotthard", "monte_bianco"])) return false;
+  if (!isEnum<Tunnel>(data.tunnel, ["gotthard", "monte_bianco", "frejus", "brenner"])) return false;
   if (!isEnum<Direction>(data.direction, ["northbound", "southbound"])) return false;
   if (
     typeof data.wait_minutes !== "number" ||

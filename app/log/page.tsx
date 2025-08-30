@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import Link from "next/link";
 import { SAMPLE_DATA } from "@/lib/sample";
@@ -19,6 +18,26 @@ const TUNNELS: Record<TunnelId, string> = {
 
 const STORAGE_KEY = "mtw.waits.v1";
 
+// Assi validi per tunnel: NS = Nord/Sud, EW = Est/Ovest
+const AXIS: Record<TunnelId, 'NS' | 'EW'> = {
+  "gottardo": 'NS',
+  "brennero": 'NS',
+  "monte-bianco": 'EW',
+  "frejus": 'EW',
+};
+
+const ALLOWED_DIRS: Record<'NS' | 'EW', Array<WaitItem["direction"]>> = {
+  NS: ['N','S'],
+  EW: ['E','W'],
+};
+
+const TUNNEL_TO_DB: Record<TunnelId, 'gotthard' | 'monte_bianco' | 'frejus' | 'brenner'> = {
+  'gottardo': 'gotthard',
+  'monte-bianco': 'monte_bianco',
+  'frejus': 'frejus',
+  'brennero': 'brenner',
+};
+
 export default function LogPage() {
   const [items, setItems] = useState<WaitItem[]>([]);
   const [filterTunnel, setFilterTunnel] = useState<"" | TunnelId>("");
@@ -29,20 +48,76 @@ export default function LogPage() {
   const [direction, setDirection] = useState<"N" | "S" | "E" | "W">("S");
   const [minutes, setMinutes] = useState<number>(0);
   const [source, setSource] = useState<string>("");
+  const [submitInfo, setSubmitInfo] = useState<null | {
+    ok: boolean;
+    status: number;
+    summary: string;
+    payload?: any;
+    response?: any;
+  }>(null);
 
-  useEffect(() => {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      try { setItems(JSON.parse(raw)); return; } catch {}
+  const [editing, setEditing] = useState<null | {
+    id: string;
+    tunnel: TunnelId;
+    direction: WaitItem['direction'];
+    minutes: number;
+    note?: string;
+    observedAt?: string;
+  }>(null);
+
+  async function loadFromDB() {
+    try {
+      const r = await fetch(`/api/measurements/list?limit=500`, { cache: "no-store" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json();
+      const rows: Array<{ id:string; observed_at:string; tunnel:string; direction:string; wait_minutes:number; note?:string|null; source?:string|null }>
+        = j.rows || [];
+      // Map DB → UI shape
+      const out: WaitItem[] = rows.map((row) => {
+        const tunnelDb = row.tunnel as any;
+        const tunnelUi: TunnelId = tunnelDb === 'gotthard' ? 'gottardo'
+          : tunnelDb === 'monte_bianco' ? 'monte-bianco'
+          : tunnelDb === 'frejus' ? 'frejus'
+          : 'brennero';
+        const axis = AXIS[tunnelUi];
+        const d = row.direction;
+        const dirUi: WaitItem["direction"] = axis === 'NS'
+          ? (d === 'southbound' ? 'N' : 'S')
+          : (d === 'northbound' ? 'E' : 'W');
+        return {
+          id: row.id,
+          tunnel: tunnelUi,
+          direction: dirUi,
+          minutes: row.wait_minutes,
+          source: row.note || row.source || undefined,
+          notedAt: row.observed_at,
+        };
+      });
+      setItems(out);
+    } catch (e) {
+      // fallback: lascia eventuale cache locale oppure sample
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        try { setItems(JSON.parse(raw)); return; } catch {}
+      }
+      setItems(SAMPLE_DATA);
     }
-    setItems(SAMPLE_DATA);
-  }, []);
+  }
+
+  useEffect(() => { loadFromDB(); }, []);
+
+  // Se cambia tunnel, forza una direzione valida per l'asse relativo
+  useEffect(() => {
+    const axis = AXIS[tunnel];
+    const allowed = ALLOWED_DIRS[axis];
+    if (!allowed.includes(direction)) setDirection(allowed[0]);
+  }, [tunnel]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
   }, [items]);
 
-  const addItem = () => {
+  const addItem = async () => {
     if (!Number.isFinite(minutes) || minutes < 0) return;
     const id = (globalThis as any).crypto?.randomUUID
       ? (globalThis as any).crypto.randomUUID()
@@ -55,12 +130,123 @@ export default function LogPage() {
       source: source?.trim() || undefined,
       notedAt: new Date().toISOString(),
     };
-    setItems((prev) => [newItem, ...prev]);
-    setMinutes(0);
-    setSource("");
+    // Prova a inviare a Supabase tramite API server
+    try {
+      const dbTunnel = TUNNEL_TO_DB[tunnel];
+      const axis = AXIS[tunnel];
+      // Validazione direzione per tunnel
+      if (axis === 'NS' && !(direction === 'N' || direction === 'S')) {
+        setSubmitInfo({ ok: false, status: 0, summary: `Direzione non valida per ${TUNNELS[tunnel]}: usa N/S`, payload: newItem });
+        return;
+      }
+      if (axis === 'EW' && !(direction === 'E' || direction === 'W')) {
+        setSubmitInfo({ ok: false, status: 0, summary: `Direzione non valida per ${TUNNELS[tunnel]}: usa E/W`, payload: newItem });
+        return;
+      }
+      const dbDir = axis === 'NS'
+        ? (direction === 'N' ? 'southbound' : 'northbound')
+        : (direction === 'E' ? 'northbound' : 'southbound');
+
+      if (!dbTunnel) {
+        setSubmitInfo({ ok: false, status: 0, summary: `Tunnel non supportato dall'enum DB: ${tunnel}`, payload: newItem });
+      } else {
+        const body = {
+          tunnel: dbTunnel,
+          direction: dbDir,
+          wait_minutes: Math.round(minutes),
+          note: source?.trim() || undefined,
+          observed_at: new Date().toISOString(),
+        };
+        const res = await fetch("/api/measurements", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          cache: "no-store",
+        }).catch((e) => {
+          setSubmitInfo({ ok: false, status: -1, summary: `Errore rete: ${e?.message || String(e)}`, payload: body });
+          throw e;
+        });
+
+        let resp: any = null;
+        const ct = res.headers.get("content-type") || "";
+        try { resp = ct.includes("application/json") ? await res.json() : await res.text(); } catch {}
+
+        if (!res.ok) {
+          const summary = `Supabase: ${res.status} ${res.statusText || ""}`.trim();
+          setSubmitInfo({ ok: false, status: res.status, summary, payload: body, response: resp });
+          console.warn("[log->manual_measurements] insert failed", res.status, resp);
+        } else {
+          setSubmitInfo({ ok: true, status: res.status, summary: `Inserito su Supabase`, payload: body, response: resp });
+          // Dopo successo, ricarica lista dal DB per coerenza
+          await loadFromDB();
+          setMinutes(0);
+          setSource("");
+        }
+      }
+    } catch (e) {
+      console.warn("[log->manual_measurements] unexpected", e);
+    }
   };
 
-  const deleteItem = (id: string) => setItems((prev) => prev.filter((x) => x.id !== id));
+  function toDbDirection(t: TunnelId, d: WaitItem['direction']): 'northbound' | 'southbound' {
+    const axis = AXIS[t];
+    return axis === 'NS'
+      ? (d === 'N' ? 'southbound' : 'northbound')
+      : (d === 'E' ? 'northbound' : 'southbound');
+  }
+
+  const startEdit = (row: WaitItem) => {
+    setEditing({ id: row.id, tunnel: row.tunnel, direction: row.direction, minutes: row.minutes, note: row.source, observedAt: row.notedAt });
+  };
+
+  const cancelEdit = () => setEditing(null);
+
+  const saveEdit = async () => {
+    if (!editing) return;
+    try {
+      const body: any = {
+        tunnel: TUNNEL_TO_DB[editing.tunnel],
+        direction: toDbDirection(editing.tunnel, editing.direction),
+        wait_minutes: Math.round(editing.minutes),
+        note: editing.note ?? null,
+      };
+      if (editing.observedAt) body.observed_at = new Date(editing.observedAt).toISOString();
+
+      const r = await fetch(`/api/measurements/${editing.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const ct = r.headers.get('content-type') || '';
+      const resp = ct.includes('application/json') ? await r.json().catch(()=>null) : await r.text().catch(()=>null);
+      if (!r.ok) {
+        setSubmitInfo({ ok: false, status: r.status, summary: 'Modifica fallita', payload: body, response: resp });
+      } else {
+        setSubmitInfo({ ok: true, status: r.status, summary: 'Modifica salvata', payload: body, response: resp });
+        await loadFromDB();
+        setEditing(null);
+      }
+    } catch (e: any) {
+      setSubmitInfo({ ok: false, status: -1, summary: `Errore rete: ${e?.message || String(e)}` });
+    }
+  };
+
+  const deleteItem = async (id: string) => {
+    if (!confirm("Eliminare questa rilevazione dal database?")) return;
+    try {
+      const r = await fetch(`/api/measurements/${id}`, { method: 'DELETE' });
+      const ct = r.headers.get('content-type') || '';
+      const resp = ct.includes('application/json') ? await r.json().catch(()=>null) : await r.text().catch(()=>null);
+      if (!r.ok) {
+        setSubmitInfo({ ok: false, status: r.status, summary: `Eliminazione fallita`, response: resp });
+      } else {
+        setSubmitInfo({ ok: true, status: r.status, summary: `Eliminazione riuscita`, response: resp });
+        await loadFromDB();
+      }
+    } catch (e: any) {
+      setSubmitInfo({ ok: false, status: -1, summary: `Errore rete: ${e?.message || String(e)}` });
+    }
+  };
 
   const clearAll = () => {
     if (confirm("Cancellare tutte le rilevazioni?")) setItems([]);
@@ -84,11 +270,9 @@ export default function LogPage() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Header />
       <main className="container-p py-6 flex-1">
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4">
           <h2 className="text-lg font-semibold">Rilevazioni</h2>
-          <Link href="/" className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50">← Home</Link>
         </div>
 
         {/* Form */}
@@ -106,7 +290,9 @@ export default function LogPage() {
               <label className="block text-xs text-gray-600 mb-1">Direzione</label>
               <select className="w-full rounded-xl border px-3 py-2"
                 value={direction} onChange={(e) => setDirection(e.target.value as any)}>
-                <option value="N">N</option><option value="S">S</option><option value="E">E</option><option value="W">W</option>
+                {ALLOWED_DIRS[AXIS[tunnel]].map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
               </select>
             </div>
             <div>
@@ -126,6 +312,71 @@ export default function LogPage() {
             <button onClick={clearAll} className="rounded-xl border px-4 py-2 text-sm hover:bg-gray-50">Svuota</button>
           </div>
         </section>
+
+        {submitInfo && (
+          <section className={`rounded-xl border p-3 mb-6 text-sm ${submitInfo.ok ? 'bg-green-50 border-green-300 text-green-900' : 'bg-red-50 border-red-300 text-red-900'}`}>
+            <div className="font-medium mb-1">{submitInfo.ok ? 'Salvataggio riuscito' : 'Salvataggio fallito'}</div>
+            <div className="mb-2">{submitInfo.summary}{submitInfo.status ? ` (status ${submitInfo.status})` : ''}</div>
+            <details className="mt-1">
+              <summary className="cursor-pointer select-none">Dettagli</summary>
+              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+                <pre className="whitespace-pre-wrap break-words bg-white/60 p-2 rounded border"><strong>Payload</strong>
+{JSON.stringify(submitInfo.payload, null, 2)}</pre>
+                {submitInfo.response !== undefined && (
+                  <pre className="whitespace-pre-wrap break-words bg-white/60 p-2 rounded border"><strong>Response</strong>
+{typeof submitInfo.response === 'string' ? submitInfo.response : JSON.stringify(submitInfo.response, null, 2)}</pre>
+                )}
+              </div>
+            </details>
+          </section>
+        )}
+
+        {editing && (
+          <section className="rounded-2xl border bg-white p-4 shadow-sm mb-6">
+            <h3 className="text-base font-semibold mb-3">Modifica rilevazione</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Tunnel</label>
+                <select className="w-full rounded-xl border px-3 py-2"
+                  value={editing.tunnel}
+                  onChange={(e)=> setEditing(prev => prev && ({...prev, tunnel: e.target.value as TunnelId}))}
+                >
+                  {Object.entries(TUNNELS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Direzione</label>
+                <select className="w-full rounded-xl border px-3 py-2"
+                  value={editing.direction}
+                  onChange={(e)=> setEditing(prev => prev && ({...prev, direction: e.target.value as any}))}
+                >
+                  {ALLOWED_DIRS[AXIS[editing.tunnel]].map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Attesa (min)</label>
+                <input type="number" min={0} className="w-full rounded-xl border px-3 py-2"
+                  value={Number.isFinite(editing.minutes) ? editing.minutes : ''}
+                  onChange={(e)=> setEditing(prev => prev && ({...prev, minutes: parseInt(e.target.value||'0', 10)}))}
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs text-gray-600 mb-1">Nota</label>
+                <input type="text" className="w-full rounded-xl border px-3 py-2"
+                  value={editing.note || ''}
+                  onChange={(e)=> setEditing(prev => prev && ({...prev, note: e.target.value}))}
+                  placeholder="Fonte / commento"
+                />
+              </div>
+            </div>
+            <div className="mt-3 flex items-center gap-2">
+              <button onClick={saveEdit} className="rounded-xl bg-black text-white px-4 py-2 text-sm hover:opacity-90">Salva</button>
+              <button onClick={cancelEdit} className="rounded-xl border px-4 py-2 text-sm hover:bg-gray-50">Annulla</button>
+            </div>
+          </section>
+        )}
 
         {/* Controls */}
         <section className="flex flex-wrap items-center gap-3 mb-4">
@@ -167,7 +418,10 @@ export default function LogPage() {
                   <td className="p-3">{row.source ?? "—"}</td>
                   <td className="p-3">{new Date(row.notedAt).toLocaleString()}</td>
                   <td className="p-3 text-right">
-                    <button onClick={() => deleteItem(row.id)} className="rounded-lg border px-3 py-1 hover:bg-gray-50">Elimina</button>
+                    <div className="flex gap-2 justify-end">
+                      <button onClick={() => startEdit(row)} className="rounded-lg border px-3 py-1 hover:bg-gray-50">Modifica</button>
+                      <button onClick={() => deleteItem(row.id)} className="rounded-lg border px-3 py-1 hover:bg-gray-50">Elimina</button>
+                    </div>
                   </td>
                 </tr>
               ))}

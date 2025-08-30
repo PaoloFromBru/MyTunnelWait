@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import type { WaitItem } from "@/types";
 
@@ -9,6 +8,8 @@ const STORAGE_KEY = "mtw.waits.v1";
 
 type GData = { north: number | null; south: number | null; fetchedAt?: string } | null;
 type MBData = { east: number | null; west: number | null; fetchedAt?: string } | null;
+type FJData = { east: number | null; west: number | null; fetchedAt?: string } | null;
+type BRData = { north: number | null; south: number | null; fetchedAt?: string } | null;
 
 export default function SourcesPage() {
   // ---- Stato widget Gottardo ----
@@ -18,6 +19,12 @@ export default function SourcesPage() {
   // ---- Stato widget Monte Bianco ----
   const [mbData, setMbData] = useState<MBData>(null);
   const [mbStatus, setMbStatus] = useState("");
+  // ---- Stato widget Frejus ----
+  const [fjData, setFjData] = useState<FJData>(null);
+  const [fjStatus, setFjStatus] = useState("");
+  // ---- Stato widget Brennero ----
+  const [brData, setBrData] = useState<BRData>(null);
+  const [brStatus, setBrStatus] = useState("");
 
   // ---- Pianificatore ----
   const [cfg, setCfg] = useState<{ gotthard: boolean; montebianco: boolean; intervalMin: number; autoAdd: boolean }>({
@@ -35,6 +42,42 @@ export default function SourcesPage() {
 
   // -------------------- UTIL --------------------
   const nowIso = () => new Date().toISOString();
+
+  // Mapping UI → DB enums
+  const toDbTunnel = (t: 'gottardo' | 'monte-bianco' | 'frejus' | 'brennero'): 'gotthard' | 'monte_bianco' | 'frejus' | 'brenner' =>
+    t === 'gottardo' ? 'gotthard' : t === 'monte-bianco' ? 'monte_bianco' : t === 'frejus' ? 'frejus' : 'brenner';
+  const toDbDir = (t: 'gottardo' | 'monte-bianco' | 'frejus' | 'brennero', d: 'N' | 'S' | 'E' | 'W'): 'northbound' | 'southbound' => {
+    // NS (Gottardo): N→southbound, S→northbound
+    // EW (Monte Bianco, Frejus): E→northbound, W→southbound
+    // NS (Brennero): N→southbound, S→northbound
+    if (t === 'gottardo' || t === 'brennero') return d === 'N' ? 'southbound' : 'northbound';
+    return d === 'E' ? 'northbound' : 'southbound';
+  };
+
+  async function saveToDB(entries: WaitItem[]): Promise<number> {
+    if (!entries.length) return 0;
+    const results = await Promise.all(entries.map(async (e) => {
+      try {
+        const body = {
+          tunnel: toDbTunnel(e.tunnel as any),
+          direction: toDbDir(e.tunnel as any, e.direction as any),
+          wait_minutes: Math.round(e.minutes),
+          observed_at: e.notedAt,
+          note: e.source ?? undefined,
+        };
+        const r = await fetch('/api/measurements', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          cache: 'no-store',
+        });
+        return r.ok;
+      } catch {
+        return false;
+      }
+    }));
+    return results.filter(Boolean).length;
+  }
 
   function loadExisting(): WaitItem[] {
     try {
@@ -88,7 +131,7 @@ export default function SourcesPage() {
     }
   };
 
-  const addG = () => {
+  const addG = async () => {
     if (!gData) return;
     const now = nowIso();
     const entries: WaitItem[] = [];
@@ -99,7 +142,11 @@ export default function SourcesPage() {
       entries.push({ id: makeId(), tunnel: "gottardo", direction: "S", minutes: gData.south, source: "gotthard-traffic", notedAt: now });
     }
     const added = saveWithDedup(entries, cfg.intervalMin);
-    setGStatus(added ? `Aggiunto allo storico (+${added})` : "Niente di nuovo da aggiungere");
+    const saved = await saveToDB(entries);
+    setGStatus(
+      (added ? `Aggiunto local (+${added}). ` : '') +
+      (saved ? `Inserito su DB (+${saved}).` : 'Nessun inserimento su DB')
+    );
   };
 
   // -------------------- MONTE BIANCO --------------------
@@ -119,7 +166,69 @@ export default function SourcesPage() {
     }
   };
 
-  const addMB = () => {
+  // -------------------- FREJUS --------------------
+  const fetchFJ = async () => {
+    setFjStatus("Caricamento…");
+    try {
+      const res = await fetch("/api/sources/frejus", { cache: "no-store" });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j?.error || "HTTP error");
+      setFjData({ east: j.east ?? null, west: j.west ?? null, fetchedAt: j.fetchedAt });
+      setFjStatus("OK");
+      return { east: j.east ?? null, west: j.west ?? null, fetchedAt: j.fetchedAt as string | undefined };
+    } catch (e: any) {
+      setFjStatus(`Errore: ${e?.message ?? String(e)}`);
+      setFjData(null);
+      return null;
+    }
+  };
+
+  const addFJ = async () => {
+    if (!fjData) return;
+    const now = nowIso();
+    const entries: WaitItem[] = [];
+    if (typeof fjData.east === 'number') entries.push({ id: makeId(), tunnel: 'frejus', direction: 'E', minutes: fjData.east, source: 'sftrf/sitaf', notedAt: now });
+    if (typeof fjData.west === 'number') entries.push({ id: makeId(), tunnel: 'frejus', direction: 'W', minutes: fjData.west, source: 'sftrf/sitaf', notedAt: now });
+    const added = saveWithDedup(entries, cfg.intervalMin);
+    const saved = await saveToDB(entries);
+    setFjStatus(
+      (added ? `Aggiunto local (+${added}). ` : '') +
+      (saved ? `Inserito su DB (+${saved}).` : 'Nessun inserimento su DB')
+    );
+  };
+
+  // -------------------- BRENNERO --------------------
+  const fetchBR = async () => {
+    setBrStatus("Caricamento…");
+    try {
+      const res = await fetch("/api/sources/brennero", { cache: "no-store" });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j?.error || "HTTP error");
+      setBrData({ north: j.north ?? null, south: j.south ?? null, fetchedAt: j.fetchedAt });
+      setBrStatus("OK");
+      return { north: j.north ?? null, south: j.south ?? null, fetchedAt: j.fetchedAt as string | undefined };
+    } catch (e: any) {
+      setBrStatus(`Errore: ${e?.message ?? String(e)}`);
+      setBrData(null);
+      return null;
+    }
+  };
+
+  const addBR = async () => {
+    if (!brData) return;
+    const now = nowIso();
+    const entries: WaitItem[] = [];
+    if (typeof brData.north === 'number') entries.push({ id: makeId(), tunnel: 'brennero', direction: 'N', minutes: brData.north, source: 'a22/brennerautobahn', notedAt: now });
+    if (typeof brData.south === 'number') entries.push({ id: makeId(), tunnel: 'brennero', direction: 'S', minutes: brData.south, source: 'a22/brennerautobahn', notedAt: now });
+    const added = saveWithDedup(entries, cfg.intervalMin);
+    const saved = await saveToDB(entries);
+    setBrStatus(
+      (added ? `Aggiunto local (+${added}). ` : '') +
+      (saved ? `Inserito su DB (+${saved}).` : 'Nessun inserimento su DB')
+    );
+  };
+
+  const addMB = async () => {
     if (!mbData) return;
     const now = nowIso();
     const entries: WaitItem[] = [];
@@ -131,7 +240,11 @@ export default function SourcesPage() {
       entries.push({ id: makeId(), tunnel: "monte-bianco", direction: "W", minutes: mbData.west, source: "tunnelmb.net", notedAt: now });
     }
     const added = saveWithDedup(entries, cfg.intervalMin);
-    setMbStatus(added ? `Aggiunto allo storico (+${added})` : "Niente di nuovo da aggiungere");
+    const saved = await saveToDB(entries);
+    setMbStatus(
+      (added ? `Aggiunto local (+${added}). ` : '') +
+      (saved ? `Inserito su DB (+${saved}).` : 'Nessun inserimento su DB')
+    );
   };
 
   // -------------------- SCHEDULER --------------------
@@ -147,6 +260,10 @@ export default function SourcesPage() {
           entries.push({ id: makeId(), tunnel: "gottardo", direction: "N", minutes: g.north, source: "gotthard-traffic", notedAt });
         if (typeof g.south === "number")
           entries.push({ id: makeId(), tunnel: "gottardo", direction: "S", minutes: g.south, source: "gotthard-traffic", notedAt });
+        if (entries.length) {
+          const saved = await saveToDB(entries.filter(e => e.tunnel === 'gottardo'));
+          if (saved) setGStatus(`Inserito su DB (+${saved})`);
+        }
       }
     }
     if (cfg.montebianco) {
@@ -157,6 +274,10 @@ export default function SourcesPage() {
           entries.push({ id: makeId(), tunnel: "monte-bianco", direction: "E", minutes: m.east, source: "tunnelmb.net", notedAt });
         if (typeof m.west === "number")
           entries.push({ id: makeId(), tunnel: "monte-bianco", direction: "W", minutes: m.west, source: "tunnelmb.net", notedAt });
+        if (entries.length) {
+          const saved = await saveToDB(entries.filter(e => e.tunnel === 'monte-bianco'));
+          if (saved) setMbStatus(`Inserito su DB (+${saved})`);
+        }
       }
     }
 
@@ -203,6 +324,8 @@ export default function SourcesPage() {
     // carica entrambi i widget al primo accesso
     fetchG();
     fetchMB();
+    fetchFJ();
+    fetchBR();
     return () => stop();
   }, []);
 
@@ -227,7 +350,6 @@ export default function SourcesPage() {
   // -------------------- UI --------------------
   return (
     <div className="min-h-screen flex flex-col">
-      <Header />
       <main className="container-p py-6 flex-1 space-y-8">
         <h2 className="text-lg font-semibold">Sorgenti online</h2>
 
@@ -357,6 +479,68 @@ export default function SourcesPage() {
             </div>
           </div>
           {mbStatus && <div className="mt-2 text-xs text-gray-600">{mbStatus}</div>}
+        </section>
+
+        {/* WIDGET FREJUS */}
+        <section className="rounded-2xl border bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-base font-semibold">Fréjus — minuti live</div>
+              <div className="text-xs text-gray-600">Fonte: SFTRF / SITAF (parsing pagina pubblica)</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={fetchFJ} className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50">Aggiorna</button>
+              <button onClick={addFJ} disabled={!fjData} className="rounded-xl bg-black text-white px-4 py-2 text-sm disabled:opacity-50">
+                Aggiungi allo storico
+              </button>
+            </div>
+          </div>
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="rounded-xl border p-4">
+              <div className="text-xs text-gray-600">Francia → Italia (E)</div>
+              <div className="text-2xl font-semibold">{typeof fjData?.east === "number" ? `${fjData.east} min` : "—"}</div>
+            </div>
+            <div className="rounded-xl border p-4">
+              <div className="text-xs text-gray-600">Italia → Francia (W)</div>
+              <div className="text-2xl font-semibold">{typeof fjData?.west === "number" ? `${fjData.west} min` : "—"}</div>
+            </div>
+            <div className="rounded-xl border p-4">
+              <div className="text-xs text-gray-600">Aggiornato</div>
+              <div className="text-sm">{fjData?.fetchedAt ? new Date(fjData.fetchedAt).toLocaleString() : "—"}</div>
+            </div>
+          </div>
+          {fjStatus && <div className="mt-2 text-xs text-gray-600">{fjStatus}</div>}
+        </section>
+
+        {/* WIDGET BRENNERO */}
+        <section className="rounded-2xl border bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-base font-semibold">Brennero — minuti live</div>
+              <div className="text-xs text-gray-600">Fonte: A22 / Brenner Autobahn (parsing pagina pubblica)</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={fetchBR} className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50">Aggiorna</button>
+              <button onClick={addBR} disabled={!brData} className="rounded-xl bg-black text-white px-4 py-2 text-sm disabled:opacity-50">
+                Aggiungi allo storico
+              </button>
+            </div>
+          </div>
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="rounded-xl border p-4">
+              <div className="text-xs text-gray-600">Nord → Sud</div>
+              <div className="text-2xl font-semibold">{typeof brData?.north === "number" ? `${brData.north} min` : "—"}</div>
+            </div>
+            <div className="rounded-xl border p-4">
+              <div className="text-xs text-gray-600">Sud → Nord</div>
+              <div className="text-2xl font-semibold">{typeof brData?.south === "number" ? `${brData.south} min` : "—"}</div>
+            </div>
+            <div className="rounded-xl border p-4">
+              <div className="text-xs text-gray-600">Aggiornato</div>
+              <div className="text-sm">{brData?.fetchedAt ? new Date(brData.fetchedAt).toLocaleString() : "—"}</div>
+            </div>
+          </div>
+          {brStatus && <div className="mt-2 text-xs text-gray-600">{brStatus}</div>}
         </section>
 
         {/* Link utili extra */}

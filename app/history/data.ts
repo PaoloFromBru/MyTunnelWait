@@ -1,4 +1,4 @@
-// Funzioni server-side per leggere la history da Supabase (dati ufficiali)
+// Funzioni server-side per leggere la history da Supabase
 import type { PostgrestSingleResponse } from '@supabase/supabase-js';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
@@ -9,18 +9,17 @@ export type Row = {
   wait_minutes: number;
 };
 
-type RawObs = {
+type RawQR = {
   observed_at?: string | null;
-  created_at?: string | null;
-  dir?: string | null;                 // 'N2S' | 'S2N'
-  wait_min?: number | null;
+  direction?: string | null;           // 'N2S' | 'S2N'
+  wait_minutes?: number | null;
   source?: string | null;
 };
 
-function normalize(r: RawObs): Row | null {
-  const observed_at = r.observed_at ?? r.created_at ?? null;
-  const dir = (r.dir ?? '').toUpperCase();
-  const wait = r.wait_min ?? null;
+function normalize(r: RawQR): Row | null {
+  const observed_at = r.observed_at ?? null;
+  const dir = (r.direction ?? '').toUpperCase();
+  const wait = r.wait_minutes ?? null;
   const source = r.source ?? 'unknown';
 
   if (!observed_at || !dir || wait == null) return null;
@@ -48,15 +47,15 @@ export async function getHistoryRowsSince(
   const sb = supabaseAdmin();
 
   let q = sb
-    .from('wait_observations')
-    .select('observed_at, created_at, dir, wait_min, source')
+    .from('queue_readings')
+    .select('observed_at, direction, wait_minutes, source')
     .gte('observed_at', sinceIso)
     .order('observed_at', { ascending: true });
 
   if (opts?.onlySource) q = q.eq('source', opts.onlySource);
-  if (opts?.dir && opts.dir !== 'BOTH') q = q.eq('dir', opts.dir);
+  if (opts?.dir && opts.dir !== 'BOTH') q = q.eq('direction', opts.dir);
 
-  const { data, error }: PostgrestSingleResponse<RawObs[]> = await q;
+  const { data, error }: PostgrestSingleResponse<RawQR[]> = await q;
   if (error) throw error;
 
   return (data ?? [])
@@ -74,14 +73,14 @@ export async function getLatest(
   const sb = supabaseAdmin();
 
   let q = sb
-    .from('wait_observations')
-    .select('observed_at, created_at, dir, wait_min, source')
+    .from('queue_readings')
+    .select('observed_at, direction, wait_minutes, source')
     .order('observed_at', { ascending: false })
     .limit(limit);
 
   if (onlySource) q = q.eq('source', onlySource);
 
-  const { data, error }: PostgrestSingleResponse<RawObs[]> = await q;
+  const { data, error }: PostgrestSingleResponse<RawQR[]> = await q;
   if (error) throw error;
 
   return (data ?? [])

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import type { WaitItem, TunnelId } from "@/types";
 import Link from "next/link";
@@ -81,7 +80,6 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Header />
       <main className="container-p py-8 flex-1 space-y-8">
         <section className="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-3xl border p-6">
           <h2 className="text-xl font-semibold">Benvenuto 👋</h2>
@@ -104,7 +102,7 @@ export default function Home() {
 
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card title="Storico" href="/history" desc="Riepilogo per giorno, tunnel e direzione." emoji="🗂️" />
-          <Card title="Sorgenti online (presto)" href="/sources" desc="Link rapidi a siti ufficiali e feed." emoji="🌐" />
+          <Card title="Sorgenti online" href="/sources" desc="Link rapidi a siti ufficiali e feed." emoji="🌐" />
         </section>
       </main>
       <Footer />

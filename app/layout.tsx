@@ -1,7 +1,6 @@
 // app/layout.tsx
-import type { Metadata, Viewport } from "next";
-import Image from "next/image";
-import Link from "next/link";
+import type { Metadata } from "next";
+import Header from "@/components/Header";
 import "./globals.css"; // <-- scommenta se hai il file globale
 
 export const metadata: Metadata = {
@@ -24,15 +23,7 @@ export const metadata: Metadata = {
       { url: "/apple-touch-icon-180.png", sizes: "180x180" },
     ],
   },
-  themeColor: "#111111",
   applicationName: "My Tunnel Wait",
-};
-
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  themeColor: "#111111",
-  colorScheme: "light",
 };
 
 export default function RootLayout({
@@ -43,19 +34,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="min-h-dvh bg-white text-gray-900">
-        <header className="flex items-center p-3 shadow-sm sticky top-0 bg-white/90 backdrop-blur z-50">
-          <Link href="/" className="flex items-center">
-            <Image
-              src="/icons/icon-192.png" // nuova icona senza testo
-              alt="My Tunnel Wait"
-              width={40}
-              height={40}
-              priority
-            />
-          </Link>
-        </header>
-
-        <main className="mx-auto max-w-5xl p-4">{children}</main>
+        <Header />
+        <main>{children}</main>
       </body>
     </html>
   );
