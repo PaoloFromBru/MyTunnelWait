@@ -22,38 +22,69 @@ export async function GET(req: NextRequest) {
   const mode = url.searchParams.get('mode') || 'list'; // 'list' | 'heatmap'
   const type = url.searchParams.get('type') || undefined; // es. 'AbnormalTraffic'
   const dir = url.searchParams.get('dir') || undefined;  // 'both' | 'positive' | 'negative'
+  const tunnel = url.searchParams.get('tunnel') || undefined; // gotthard | monte_bianco | frejus | brenner
+  const directionDb = url.searchParams.get('direction') || undefined; // northbound | southbound for wait-mode
 
   try {
     const sb = supabaseAdmin();
 
-    if (mode === 'heatmap') {
-      const { data, error } = await sb.rpc('traffic_bins_15min', {
-        p_from: from,
-        p_to: to,
-      });
-      if (error) throw error;
-
-      const buckets = new Map<string, number>();
-      for (const r of (data as any[]) || []) {
-        if (type && r.record_type !== type) continue;
-        if (dir && r.direction !== dir) continue;
-        const dt = new Date(r.time_bin);
-        // convert to Europe/Brussels for binning
-        const brussels = new Date(dt.toLocaleString('en-US', { timeZone: 'Europe/Brussels' }));
-        const dow = brussels.getDay(); // 0=Sun ... 6=Sat
-        const hour = brussels.getHours();
-        const key = `${dow}:${hour}`;
-        buckets.set(key, (buckets.get(key) ?? 0) + 1);
-      }
-
-      const heat = [] as Array<{ dow: number; hour: number; count: number }>;
-      for (let d = 0; d < 7; d++) {
-        for (let h = 0; h < 24; h++) {
-          const key = `${d}:${h}`;
-          heat.push({ dow: d, hour: h, count: buckets.get(key) ?? 0 });
+    if (mode === 'heatmap' || mode === 'heatmap_wait') {
+      if (mode === 'heatmap') {
+        const { data, error } = await sb.rpc('traffic_bins_15min', { p_from: from, p_to: to });
+        if (error) throw error;
+        const buckets = new Map<string, number>();
+        for (const r of (data as any[]) || []) {
+          if (type && r.record_type !== type) continue;
+          if (dir && r.direction !== dir) continue;
+          const dt = new Date(r.time_bin);
+          const brussels = new Date(dt.toLocaleString('en-US', { timeZone: 'Europe/Brussels' }));
+          const dow = brussels.getDay();
+          const hour = brussels.getHours();
+          const key = `${dow}:${hour}`;
+          buckets.set(key, (buckets.get(key) ?? 0) + 1);
         }
+        const heat = [] as Array<{ dow: number; hour: number; count: number }>;
+        for (let d = 0; d < 7; d++) {
+          for (let h = 0; h < 24; h++) {
+            const key = `${d}:${h}`;
+            heat.push({ dow: d, hour: h, count: buckets.get(key) ?? 0 });
+          }
+        }
+        return NextResponse.json({ from, to, heatmap: heat });
+      } else {
+        // heatmap_wait: aggregate official wait p50 by dow/hour (average across days)
+        const { data, error } = await sb.rpc('official_wait_bins_15min', { p_from: from, p_to: to });
+        if (error) throw error;
+        const sums = new Map<string, { sum: number; n: number }>();
+        // map directionDb to dir_logical per tunnel axis
+        const axis: Record<string, 'NS' | 'EW'> = { gotthard: 'NS', brenner: 'NS', monte_bianco: 'EW', frejus: 'EW' };
+        const dirLogical = (tunnel && directionDb)
+          ? (axis[tunnel] === 'NS' ? (directionDb === 'northbound' ? 'S2N' : 'N2S') : (directionDb === 'northbound' ? 'E2W' : 'W2E'))
+          : undefined;
+        for (const r of (data as any[]) || []) {
+          if (tunnel && r.tunnel !== tunnel) continue;
+          if (dirLogical && r.dir !== dirLogical) continue;
+          const dt = new Date(r.time_bin);
+          const brussels = new Date(dt.toLocaleString('en-US', { timeZone: 'Europe/Brussels' }));
+          const dow = brussels.getDay();
+          const hour = brussels.getHours();
+          const key = `${dow}:${hour}`;
+          const v = Number(r.p50_wait) || 0;
+          const cur = sums.get(key) || { sum: 0, n: 0 };
+          cur.sum += v; cur.n += 1;
+          sums.set(key, cur);
+        }
+        const heat = [] as Array<{ dow: number; hour: number; minutes: number }>;
+        for (let d = 0; d < 7; d++) {
+          for (let h = 0; h < 24; h++) {
+            const key = `${d}:${h}`;
+            const agg = sums.get(key);
+            const minutes = agg ? Math.round(agg.sum / agg.n) : 0;
+            heat.push({ dow: d, hour: h, minutes });
+          }
+        }
+        return NextResponse.json({ from, to, heatmap: heat });
       }
-      return NextResponse.json({ from, to, heatmap: heat });
     }
 
     // mode === 'list'

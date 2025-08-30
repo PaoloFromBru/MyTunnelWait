@@ -14,9 +14,9 @@ function isTunnel(val: any): val is 'gotthard' | 'monte_bianco' | 'frejus' | 'br
   return val === 'gotthard' || val === 'monte_bianco' || val === 'frejus' || val === 'brenner';
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const id = params.id;
+    const { id } = await ctx.params;
     if (!id || typeof id !== "string") {
       return NextResponse.json({ error: "missing-id" }, { status: 400 });
     }
@@ -29,9 +29,9 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   }
 }
 
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const id = params.id;
+    const { id } = await ctx.params;
     if (!id || typeof id !== "string") {
       return NextResponse.json({ error: "missing-id" }, { status: 400 });
     }

@@ -16,11 +16,13 @@ const TUNNELS: Record<TunnelId, string> = {
 type Dir = "N" | "S" | "E" | "W";
 
 export default function WaitsChart() {
-  const [rows, setRows] = useState<Array<{ observed_at: string; wait_minutes: number; source?: string | null }>>([]);
+  const [rowsManual, setRowsManual] = useState<Array<{ observed_at: string; wait_minutes: number; source?: string | null }>>([]);
+  const [rowsOfficial, setRowsOfficial] = useState<Array<{ observed_at: string; wait_minutes: number; source?: string | null }>>([]);
   const [tunnel, setTunnel] = useState<TunnelId>("gottardo");
   const [direction, setDirection] = useState<Dir>("S");
   const [days, setDays] = useState<number>(7);
   const [loading, setLoading] = useState<boolean>(false);
+  const [source, setSource] = useState<'manual' | 'official' | 'both'>('both');
 
   const AXIS: Record<TunnelId, 'NS' | 'EW'> = {
     "gottardo": 'NS',
@@ -47,11 +49,19 @@ export default function WaitsChart() {
       const dbTunnel = toDbTunnel(tunnel);
       const dbDir = toDbDir(tunnel, direction);
       const qs = new URLSearchParams({ tunnel: dbTunnel, direction: dbDir, days: String(days) });
-      const r = await fetch(`/api/measurements/series?${qs.toString()}`, { cache: 'no-store' });
-      const j = await r.json();
-      setRows(j.rows ?? []);
+      if (source === 'manual' || source === 'both') {
+        const r = await fetch(`/api/measurements/series?${qs.toString()}`, { cache: 'no-store' });
+        const j = await r.json();
+        setRowsManual(j.rows ?? []);
+      } else setRowsManual([]);
+      if (source === 'official' || source === 'both') {
+        const r2 = await fetch(`/api/official/series?${qs.toString()}`, { cache: 'no-store' });
+        const j2 = await r2.json();
+        setRowsOfficial(j2.rows ?? []);
+      } else setRowsOfficial([]);
     } catch {
-      setRows([]);
+      setRowsManual([]);
+      setRowsOfficial([]);
     } finally {
       setLoading(false);
     }
@@ -63,13 +73,24 @@ export default function WaitsChart() {
   }, [tunnel, direction, days]);
 
   const data = useMemo(() => {
-    const sorted = rows.slice().sort((a,b) => +new Date(a.observed_at) - +new Date(b.observed_at));
-    return sorted.map((x) => ({
-      t: new Date(x.observed_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }),
-      minutes: x.wait_minutes,
-      source: x.source ?? "—",
-    }));
-  }, [rows]);
+    const m = rowsManual.slice().sort((a,b)=>+new Date(a.observed_at)-+new Date(b.observed_at));
+    const o = rowsOfficial.slice().sort((a,b)=>+new Date(a.observed_at)-+new Date(b.observed_at));
+    // Merge by time label for dual line
+    const map = new Map<string, { t: string; minutesManual?: number; minutesOfficial?: number }>();
+    for (const x of m) {
+      const t = new Date(x.observed_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+      const cur = map.get(t) || { t };
+      cur.minutesManual = x.wait_minutes;
+      map.set(t, cur);
+    }
+    for (const x of o) {
+      const t = new Date(x.observed_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+      const cur = map.get(t) || { t };
+      cur.minutesOfficial = x.wait_minutes;
+      map.set(t, cur);
+    }
+    return [...map.values()].sort((a,b)=>a.t.localeCompare(b.t));
+  }, [rowsManual, rowsOfficial]);
 
   return (
     <div className="space-y-4">
@@ -109,6 +130,15 @@ export default function WaitsChart() {
         </div>
 
         <div>
+          <label className="block text-xs text-gray-600 mb-1">Fonte</label>
+          <select className="rounded-xl border px-3 py-2" value={source} onChange={(e)=>setSource(e.target.value as any)}>
+            <option value="manual">Manuale</option>
+            <option value="official">Ufficiale</option>
+            <option value="both">Entrambi</option>
+          </select>
+        </div>
+
+        <div>
           <label className="block text-xs text-gray-600 mb-1">Giorni</label>
           <select
             className="rounded-xl border px-3 py-2"
@@ -140,10 +170,15 @@ export default function WaitsChart() {
               <XAxis dataKey="t" />
               <YAxis allowDecimals={false} domain={[0, (dataMax: number) => Math.max(10, dataMax + 5)]} />
               <Tooltip
-                formatter={(val, name) => (name === "minutes" ? [`${val} min`, "Attesa"] : [String(val), name])}
+                formatter={(val, name) => ([`${val} min`, name === 'minutesManual' ? 'Manuale' : 'Ufficiale'])}
                 labelFormatter={(label) => `Ora: ${label}`}
               />
-              <Line type="monotone" dataKey="minutes" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+              {(source === 'manual' || source === 'both') && (
+                <Line type="monotone" dataKey="minutesManual" name="Manuale" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+              )}
+              {(source === 'official' || source === 'both') && (
+                <Line type="monotone" dataKey="minutesOfficial" name="Ufficiale" stroke="#16a34a" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+              )}
             </LineChart>
           </ResponsiveContainer>
         )}
