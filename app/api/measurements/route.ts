@@ -1,6 +1,7 @@
 // app/api/measurements/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+
+export const runtime = "nodejs";
 
 type Tunnel = "gotthard" | "monte_bianco";
 type Direction = "northbound" | "southbound";
@@ -71,36 +72,48 @@ export async function POST(req: NextRequest) {
 
     const b = json;
 
-    // Converti la direzione nel formato atteso dal database
-    const dir = b.direction === "northbound" ? "S2N" : "N2S";
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-    // Se usi Supabase Auth lato app, puoi recuperare user id dai cookies session (opzionale)
-    // In questo esempio lasciamo reporter_id null
-    const { error, data } = await supabaseAdmin()
-      .from("manual_measurements")
-      .insert({
-        tunnel: b.tunnel,
-        dir,
-        wait_min: b.wait_minutes,
-        lanes_open: b.lanes_open ?? null,
-        note: b.note ?? null,
-        observed_at: b.observed_at ?? new Date().toISOString(),
-        lat: b.lat ?? null,
-        lon: b.lon ?? null,
-        reporter_id: null,
-        client_ip: ip ?? null,
-        user_agent: ua ?? null,
-        source: "manual",
-      })
-      .select("id, observed_at")
-      .single();
+    // NB: return=representation + ?select=... per farti restituire l'id come con .select("id,observed_at")
+    const res = await fetch(
+      `${url}/rest/v1/manual_measurements?select=id,observed_at`,
+      {
+        method: "POST",
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+          Prefer: "return=representation",
+        },
+        body: JSON.stringify({
+          tunnel: b.tunnel,
+          direction: b.direction,
+          wait_minutes: b.wait_minutes,
+          lanes_open: b.lanes_open ?? null,
+          note: b.note ?? null,
+          observed_at: b.observed_at ?? new Date().toISOString(),
+          lat: b.lat ?? null,
+          lon: b.lon ?? null,
+          reporter_id: null,
+          client_ip: ip ?? null,
+          user_agent: ua ?? null,
+          source: "manual",
+        }),
+      }
+    );
 
-    if (error) {
-      console.error("Insert error", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!res.ok) {
+      const txt = await res.text();
+      console.error("[measurements] REST insert failed", res.status, txt);
+      return NextResponse.json(
+        { error: "REST insert failed", status: res.status, details: txt },
+        { status: 500 }
+      );
     }
 
-    return NextResponse.json({ ok: true, id: data.id, observed_at: data.observed_at });
+    const rows = await res.json(); // array con una riga
+    return NextResponse.json({ ok: true, id: rows[0].id, observed_at: rows[0].observed_at });
   } catch (err: any) {
     console.error(err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
