@@ -1,0 +1,3 @@
+[functions.cron-tomtom]
+verify_jwt = false
+

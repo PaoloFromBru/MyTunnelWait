@@ -40,6 +40,7 @@ const TUNNEL_TO_DB: Record<TunnelId, 'gotthard' | 'monte_bianco' | 'frejus' | 'b
 
 export default function LogPage() {
   const [items, setItems] = useState<WaitItem[]>([]);
+  const [includeAuto, setIncludeAuto] = useState(false);
   const [filterTunnel, setFilterTunnel] = useState<"" | TunnelId>("");
   const [sortKey, setSortKey] = useState<SortKey>("notedAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -67,7 +68,8 @@ export default function LogPage() {
 
   async function loadFromDB() {
     try {
-      const r = await fetch(`/api/measurements/list?limit=500`, { cache: "no-store" });
+      const src = includeAuto ? 'all' : 'manual';
+      const r = await fetch(`/api/measurements/list?limit=500&source=${src}`, { cache: "no-store" });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const j = await r.json();
       const rows: Array<{ id:string; observed_at:string; tunnel:string; direction:string; wait_minutes:number; note?:string|null; source?:string|null }>
@@ -89,7 +91,7 @@ export default function LogPage() {
           tunnel: tunnelUi,
           direction: dirUi,
           minutes: row.wait_minutes,
-          source: row.note || row.source || undefined,
+          source: row.source || undefined,
           notedAt: row.observed_at,
         };
       });
@@ -104,7 +106,7 @@ export default function LogPage() {
     }
   }
 
-  useEffect(() => { loadFromDB(); }, []);
+  useEffect(() => { loadFromDB(); }, [includeAuto]);
 
   // Se cambia tunnel, forza una direzione valida per l'asse relativo
   useEffect(() => {
@@ -384,6 +386,10 @@ export default function LogPage() {
             <option value="">Tutti i tunnel</option>
             {Object.entries(TUNNELS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
           </select>
+          <label className="text-sm flex items-center gap-2">
+            <input type="checkbox" checked={includeAuto} onChange={(e)=>setIncludeAuto(e.target.checked)} />
+            Includi automatiche (TomTom)
+          </label>
           <div className="flex items-center gap-2 text-sm">
             <span className="text-gray-600">Ordina per:</span>
             <button className={`rounded-xl border px-3 py-1 ${sortKey === "notedAt" ? "bg-gray-100" : ""}`}
@@ -415,7 +421,13 @@ export default function LogPage() {
                   <td className="p-3">{TUNNELS[row.tunnel]}</td>
                   <td className="p-3">{row.direction}</td>
                   <td className="p-3"><span className="inline-flex items-center rounded-lg bg-gray-100 px-2 py-1">{row.minutes} min</span></td>
-                  <td className="p-3">{row.source ?? "—"}</td>
+                  <td className="p-3">
+                    {row.source === 'tomtom' ? (
+                      <span className="inline-flex items-center rounded-lg bg-yellow-100 text-yellow-900 px-2 py-1 text-xs font-medium" title="Misura automatica (TomTom)">AUTO</span>
+                    ) : (
+                      row.source ?? "—"
+                    )}
+                  </td>
                   <td className="p-3">{new Date(row.notedAt).toLocaleString()}</td>
                   <td className="p-3 text-right">
                     <div className="flex gap-2 justify-end">
