@@ -19,6 +19,13 @@ export default function SourcesPage() {
   // ---- Stato widget Monte Bianco ----
   const [mbData, setMbData] = useState<MBData>(null);
   const [mbStatus, setMbStatus] = useState("");
+  // Chiusura programmata Monte Bianco: 1 Sep 2025 → 17 Dec 2025 (inclusi)
+  const MB_CLOSED_FROM = new Date('2025-09-01T00:00:00Z');
+  const MB_CLOSED_TO   = new Date('2025-12-17T23:59:59Z');
+  const mbClosedPlanned = typeof window !== 'undefined' && (() => {
+    const now = new Date();
+    return now >= MB_CLOSED_FROM && now <= MB_CLOSED_TO;
+  })();
   // ---- Stato widget Frejus ----
   const [fjData, setFjData] = useState<FJData>(null);
   const [fjStatus, setFjStatus] = useState("");
@@ -156,6 +163,11 @@ export default function SourcesPage() {
       const res = await fetch("/api/sources/montebianco", { cache: "no-store" });
       const j = await res.json();
       if (!res.ok) throw new Error(j?.error || "HTTP error");
+      if (j.closed) {
+        setMbData(null);
+        setMbStatus("Chiuso");
+        return null;
+      }
       setMbData({ east: j.east ?? null, west: j.west ?? null, fetchedAt: j.fetchedAt });
       setMbStatus("OK");
       return { east: j.east ?? null, west: j.west ?? null, fetchedAt: j.fetchedAt as string | undefined };
@@ -459,11 +471,16 @@ export default function SourcesPage() {
             </div>
             <div className="flex items-center gap-2">
               <button onClick={fetchMB} className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50">Aggiorna</button>
-              <button onClick={addMB} disabled={!mbData} className="rounded-xl bg-black text-white px-4 py-2 text-sm disabled:opacity-50">
+              <button onClick={addMB} disabled={!mbData || mbClosedPlanned || mbStatus === 'Chiuso'} className="rounded-xl bg-black text-white px-4 py-2 text-sm disabled:opacity-50">
                 Aggiungi allo storico
               </button>
             </div>
           </div>
+          {(mbClosedPlanned || mbStatus === 'Chiuso') && (
+            <div className="mt-2 rounded-lg border border-red-200 bg-red-50 text-red-800 text-sm p-2">
+              Tunnel del Monte Bianco chiuso dal 1 Settembre al 17 Dicembre 2025 per lavori. Nessuna attesa disponibile.
+            </div>
+          )}
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="rounded-xl border p-4">
               <div className="text-xs text-gray-600">Francia → Italia (E)</div>

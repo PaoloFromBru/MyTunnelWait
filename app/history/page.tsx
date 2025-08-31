@@ -7,11 +7,13 @@ type RecordRow = {
   id: string;
   record_type: string;
   subtype: string | null;
-  direction: string | null;
   is_cancelled: boolean;
-  length_km: number | null;
-  validity_start_be: string;
-  validity_end_be: string | null;
+  validity_start?: string; // UTC
+  validity_end?: string | null; // UTC
+  tunnel_id?: string | null;
+  dir_logical?: 'N2S'|'S2N'|'E2W'|'W2E'|null;
+  length_m?: number | null;
+  carriageway?: string | null;
 };
 
 const DOW = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
@@ -57,7 +59,11 @@ export default function HistoryPage() {
 
     const qs2 = new URLSearchParams({ days: String(days), mode: "list" });
     if (type) qs2.set("type", type);
-    if (dir)  qs2.set("dir", dir);
+    if (tunnel) qs2.set('tunnel', toDbTunnel(tunnel));
+    if (tunnel && dirUi) {
+      const logical = AXIS[tunnel as Exclude<TunnelUi,''>] === 'NS' ? (dirUi === 'N' ? 'N2S' : 'S2N') : (dirUi === 'E' ? 'E2W' : 'W2E');
+      qs2.set('dir_logical', logical);
+    }
     const l = await fetch(`/api/history?${qs2.toString()}`).then(r => r.json());
 
     setHeat(h.heatmap ?? []);
@@ -170,21 +176,21 @@ export default function HistoryPage() {
                 <th className="p-2 text-left">Start</th>
                 <th className="p-2 text-left">End</th>
                 <th className="p-2 text-left">Type</th>
+                <th className="p-2 text-left">Tunnel</th>
                 <th className="p-2 text-left">Dir</th>
                 <th className="p-2 text-right">Km</th>
-                <th className="p-2 text-left">Cancelled</th>
                 <th className="p-2 text-left">ID</th>
               </tr>
             </thead>
             <tbody>
               {rows.map(r => (
                 <tr key={r.id} className="border-t">
-                  <td className="p-2">{r.validity_start_be?.replace("T"," ").slice(0,16)}</td>
-                  <td className="p-2">{r.validity_end_be ? r.validity_end_be.replace("T"," ").slice(0,16) : ""}</td>
+                  <td className="p-2">{r.validity_start ? new Date(r.validity_start).toLocaleString() : ''}</td>
+                  <td className="p-2">{r.validity_end ? new Date(r.validity_end).toLocaleString() : ''}</td>
                   <td className="p-2">{r.record_type}{r.subtype ? ` / ${r.subtype}` : ""}</td>
-                  <td className="p-2">{r.direction || ""}</td>
-                  <td className="p-2 text-right">{r.length_km?.toFixed(1) ?? ""}</td>
-                  <td className="p-2">{r.is_cancelled ? "yes" : ""}</td>
+                  <td className="p-2">{r.tunnel_id || ''}</td>
+                  <td className="p-2">{r.dir_logical?.replace('N2S','N→S')?.replace('S2N','S→N')?.replace('E2W','E→W')?.replace('W2E','W→E') || ''}</td>
+                  <td className="p-2 text-right">{typeof r.length_m === 'number' ? (r.length_m/1000).toFixed(1) : ''}</td>
                   <td className="p-2">{r.id}</td>
                 </tr>
               ))}

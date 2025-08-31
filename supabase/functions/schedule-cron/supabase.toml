@@ -1,0 +1,5 @@
+[functions.schedule-cron]
+# Optional: disable platform JWT verification for this function only.
+# If you set this to false, keep X-Setup-Key enabled in the function code.
+verify_jwt = false
+

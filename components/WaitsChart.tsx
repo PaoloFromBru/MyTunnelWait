@@ -75,22 +75,29 @@ export default function WaitsChart() {
   const data = useMemo(() => {
     const m = rowsManual.slice().sort((a,b)=>+new Date(a.observed_at)-+new Date(b.observed_at));
     const o = rowsOfficial.slice().sort((a,b)=>+new Date(a.observed_at)-+new Date(b.observed_at));
-    // Merge by time label for dual line
+
+    const formatKey = (iso: string) => {
+      const d = new Date(iso);
+      if (days <= 3) return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+      if (days <= 30) return d.toLocaleString(undefined, { month: '2-digit', day: '2-digit', hour: '2-digit' });
+      return d.toLocaleDateString();
+    };
+
     const map = new Map<string, { t: string; minutesManual?: number; minutesOfficial?: number }>();
     for (const x of m) {
-      const t = new Date(x.observed_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+      const t = formatKey(x.observed_at);
       const cur = map.get(t) || { t };
       cur.minutesManual = x.wait_minutes;
       map.set(t, cur);
     }
     for (const x of o) {
-      const t = new Date(x.observed_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+      const t = formatKey(x.observed_at);
       const cur = map.get(t) || { t };
       cur.minutesOfficial = x.wait_minutes;
       map.set(t, cur);
     }
     return [...map.values()].sort((a,b)=>a.t.localeCompare(b.t));
-  }, [rowsManual, rowsOfficial]);
+  }, [rowsManual, rowsOfficial, days]);
 
   return (
     <div className="space-y-4">
@@ -171,7 +178,7 @@ export default function WaitsChart() {
               <YAxis allowDecimals={false} domain={[0, (dataMax: number) => Math.max(10, dataMax + 5)]} />
               <Tooltip
                 formatter={(val, name) => ([`${val} min`, name === 'minutesManual' ? 'Manuale' : 'Ufficiale'])}
-                labelFormatter={(label) => `Ora: ${label}`}
+                labelFormatter={(label) => `${label}`}
               />
               {(source === 'manual' || source === 'both') && (
                 <Line type="monotone" dataKey="minutesManual" name="Manuale" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />

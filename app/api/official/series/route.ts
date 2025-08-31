@@ -33,16 +33,52 @@ export async function GET(req: NextRequest) {
     const dirLogical = toDirLogical(tunnel, dir as any);
 
     const sb = supabaseAdmin();
-    const { data, error } = await sb.rpc('official_wait_bins_15min', { p_from: from, p_to: to });
-    if (error) throw error;
 
-    const rows = ((data as any[]) || [])
-      .filter(r => r.tunnel === tunnel && r.dir === dirLogical)
-      .map(r => ({ observed_at: r.time_bin as string, wait_minutes: Number(r.p50_wait) || 0, source: 'official' }));
+    let rows: Array<{ observed_at: string; wait_minutes: number; source: string }> = [];
+    if (days <= 7) {
+      // 15-min resolution
+      const { data, error } = await sb
+        .from('official_wait_15min')
+        .select('time_bin,tunnel,dir,p50_wait')
+        .eq('tunnel', tunnel)
+        .eq('dir', dirLogical)
+        .gte('time_bin', from)
+        .lte('time_bin', to)
+        .order('time_bin', { ascending: true });
+      if (error) throw error;
+      rows = (data || []).map((r: any) => ({ observed_at: r.time_bin, wait_minutes: Number(r.p50_wait) || 0, source: 'official' }));
+    } else if (days <= 90) {
+      // hourly resolution
+      const { data, error } = await sb
+        .from('official_wait_hourly')
+        .select('hour,tunnel,dir,p50_wait')
+        .eq('tunnel', tunnel)
+        .eq('dir', dirLogical)
+        .gte('hour', from)
+        .lte('hour', to)
+        .order('hour', { ascending: true });
+      if (error) throw error;
+      rows = (data || []).map((r: any) => ({ observed_at: r.hour, wait_minutes: Number(r.p50_wait) || 0, source: 'official' }));
+    } else {
+      // daily resolution
+      const { data, error } = await sb
+        .from('official_wait_daily')
+        .select('day,tunnel,dir,p50_wait')
+        .eq('tunnel', tunnel)
+        .eq('dir', dirLogical)
+        .gte('day', from.slice(0, 10))
+        .lte('day', new Date().toISOString().slice(0, 10))
+        .order('day', { ascending: true });
+      if (error) throw error;
+      rows = (data || []).map((r: any) => ({
+        observed_at: new Date(r.day + 'T00:00:00Z').toISOString(),
+        wait_minutes: Number(r.p50_wait) || 0,
+        source: 'official',
+      }));
+    }
 
     return NextResponse.json({ from, days, rows }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'unknown' }, { status: 500 });
   }
 }
-

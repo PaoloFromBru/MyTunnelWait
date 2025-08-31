@@ -100,7 +100,7 @@ export default function Header() {
                 </svg>
               </button>
             </div>
-            <nav className="container-p mt-6 flex-1 flex flex-col gap-4 text-xl">
+            <nav className="container-p mt-6 flex-1 flex flex-col gap-4 text-xl items-end text-right pr-4">
               <Link href="/" className={linkCls("/")} onClick={() => setOpen(false)}>Home</Link>
               <Link href="/log" className={linkCls("/log")} onClick={() => setOpen(false)}>Log</Link>
               <Link href="/chart" className={linkCls("/chart")} onClick={() => setOpen(false)}>Grafico</Link>

@@ -20,7 +20,7 @@ import {
   predictWait,
 } from "@/lib/forecast";
 
-const STORAGE_KEY = "mtw.waits.v1";
+// Caricamento da Supabase: manual_measurements → mapping a WaitItem
 
 const TUNNELS: Record<TunnelId, string> = {
   gottardo: "San Gottardo",
@@ -70,14 +70,51 @@ export default function Planner() {
     setTomorrowLabel(fmtTomorrow());
   }, []);
 
-  // carica storico
+  // Carica storico da Supabase (manual_measurements)
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      setItems(raw ? JSON.parse(raw) : []);
-    } catch {
-      setItems([]);
+    async function load() {
+      try {
+        const r = await fetch(`/api/measurements/list?limit=5000`, { cache: "no-store" });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = await r.json();
+        const rows: Array<{ id:string; observed_at:string; tunnel:string; direction:string; wait_minutes:number; note?:string|null; source?:string|null }> = j.rows || [];
+
+        const AXIS: Record<TunnelId, 'NS' | 'EW'> = {
+          'gottardo': 'NS',
+          'brennero': 'NS',
+          'monte-bianco': 'EW',
+          'frejus': 'EW',
+        };
+
+        const toUiTunnel = (t: string): TunnelId =>
+          t === 'gotthard' ? 'gottardo'
+            : t === 'monte_bianco' ? 'monte-bianco'
+            : t === 'frejus' ? 'frejus'
+            : 'brennero';
+
+        const toUiDir = (t: TunnelId, d: string): Dir => {
+          const axis = AXIS[t];
+          if (axis === 'NS') return (d === 'southbound' ? 'N' : 'S') as Dir;
+          return (d === 'northbound' ? 'E' : 'W') as Dir;
+        };
+
+        const out: WaitItem[] = rows.map((row) => {
+          const tUi = toUiTunnel(row.tunnel);
+          return {
+            id: row.id,
+            tunnel: tUi,
+            direction: toUiDir(tUi, row.direction),
+            minutes: row.wait_minutes,
+            source: row.note || row.source || undefined,
+            notedAt: row.observed_at,
+          };
+        });
+        setItems(out);
+      } catch {
+        setItems([]);
+      }
     }
+    load();
   }, []);
 
   const prof = useMemo(() => buildProfiles(items), [items]);

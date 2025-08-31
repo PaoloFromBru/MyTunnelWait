@@ -21,9 +21,10 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const mode = url.searchParams.get('mode') || 'list'; // 'list' | 'heatmap'
   const type = url.searchParams.get('type') || undefined; // es. 'AbnormalTraffic'
-  const dir = url.searchParams.get('dir') || undefined;  // 'both' | 'positive' | 'negative'
+  const dir = url.searchParams.get('dir') || undefined;  // 'both' | 'positive' | 'negative' (for heatmap events)
   const tunnel = url.searchParams.get('tunnel') || undefined; // gotthard | monte_bianco | frejus | brenner
   const directionDb = url.searchParams.get('direction') || undefined; // northbound | southbound for wait-mode
+  const dirLogicalParam = url.searchParams.get('dir_logical') || undefined; // 'N2S' | 'S2N' | 'E2W' | 'W2E' for list-mode
 
   try {
     const sb = supabaseAdmin();
@@ -88,16 +89,21 @@ export async function GET(req: NextRequest) {
     }
 
     // mode === 'list'
+    // Use classified view to expose tunnel_id and dir_logical; hide cancelled events
+    // Overlap condition: validity_start <= to AND (validity_end >= from OR validity_end IS NULL)
     let q = sb
-      .from('traffic_records_enriched')
-      .select('*')
-      .gte('validity_start', from)
+      .from('traffic_records_classified')
+      .select('id, record_type, subtype, is_cancelled, validity_start, validity_end, tunnel_id, dir_logical, length_m, carriageway')
       .lte('validity_start', to)
+      .or(`validity_end.gte.${from},validity_end.is.null`)
+      .eq('is_cancelled', false)
+      .order('validity_end', { ascending: false, nullsFirst: false })
       .order('validity_start', { ascending: false })
       .limit(500);
 
     if (type) q = q.eq('record_type', type);
-    if (dir) q = q.eq('direction', dir);
+    if (tunnel) q = q.eq('tunnel_id', tunnel);
+    if (dirLogicalParam) q = q.eq('dir_logical', dirLogicalParam);
 
     const { data, error } = await q;
     if (error) throw error;
