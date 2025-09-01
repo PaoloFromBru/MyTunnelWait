@@ -22,29 +22,29 @@ async function insertWithFallback(rows: any[]) {
 
 export async function GET(req: Request) {
   try {
-    const [north, south] = await Promise.all([
-      estimateWait("gotthard", "N"),
-      estimateWait("gotthard", "S"),
+    const [east, west] = await Promise.all([
+      estimateWait("monte_bianco", "E"),
+      estimateWait("monte_bianco", "W"),
     ]);
     const rows: any[] = [];
-    if (north) {
+    if (east) {
       rows.push({
-        tunnel: "gotthard",
-        direction: "N",
+        tunnel: "monte_bianco",
+        direction: "E",
         source: "tomtom:fusion",
-        wait_minutes: north.waitMinutes,
-        method: north.method,
-        raw: north.raw,
+        wait_minutes: east.waitMinutes,
+        method: east.method,
+        raw: east.raw,
       });
     }
-    if (south) {
+    if (west) {
       rows.push({
-        tunnel: "gotthard",
-        direction: "S",
+        tunnel: "monte_bianco",
+        direction: "W",
         source: "tomtom:fusion",
-        wait_minutes: south.waitMinutes,
-        method: south.method,
-        raw: south.raw,
+        wait_minutes: west.waitMinutes,
+        method: west.method,
+        raw: west.raw,
       });
     }
 

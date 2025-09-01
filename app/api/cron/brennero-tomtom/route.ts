@@ -23,13 +23,13 @@ async function insertWithFallback(rows: any[]) {
 export async function GET(req: Request) {
   try {
     const [north, south] = await Promise.all([
-      estimateWait("gotthard", "N"),
-      estimateWait("gotthard", "S"),
+      estimateWait("brenner", "N"),
+      estimateWait("brenner", "S"),
     ]);
     const rows: any[] = [];
     if (north) {
       rows.push({
-        tunnel: "gotthard",
+        tunnel: "brenner",
         direction: "N",
         source: "tomtom:fusion",
         wait_minutes: north.waitMinutes,
@@ -39,7 +39,7 @@ export async function GET(req: Request) {
     }
     if (south) {
       rows.push({
-        tunnel: "gotthard",
+        tunnel: "brenner",
         direction: "S",
         source: "tomtom:fusion",
         wait_minutes: south.waitMinutes,
