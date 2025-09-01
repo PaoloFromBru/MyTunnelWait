@@ -1,5 +1,5 @@
 export type RouteDelay = {
-  direction: "N" | "S";
+  direction: "N" | "S" | "E" | "W";
   delaySeconds: number;
   raw?: any;
 };
@@ -27,7 +27,7 @@ export async function getRouteDelay(
   origin: string,
   destination: string,
   apiKey: string,
-  direction: "N" | "S"
+  direction: "N" | "S" | "E" | "W"
 ): Promise<RouteDelay> {
   const url = `${TT_BASE}/${origin}:${destination}/json?key=${apiKey}&traffic=true&computeTravelTimeFor=all&routeType=fastest`;
   const data = await fetchJson(url);

@@ -1,5 +1,5 @@
 export type FlowDelay = {
-  direction: "N" | "S";
+  direction: "N" | "S" | "E" | "W";
   travelSeconds: number;
   raw?: any[];
 };
@@ -26,7 +26,7 @@ async function fetchJson(url: string, attempts = 2, timeoutMs = 4000): Promise<a
 export async function getFlowChain(
   coords: Array<{ lat: number; lon: number }>,
   apiKey: string,
-  direction: "N" | "S"
+  direction: "N" | "S" | "E" | "W"
 ): Promise<FlowDelay> {
   const results: any[] = [];
   let total = 0;
