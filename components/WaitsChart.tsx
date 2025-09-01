@@ -73,30 +73,33 @@ export default function WaitsChart() {
   }, [tunnel, direction, days]);
 
   const data = useMemo(() => {
-    const m = rowsManual.slice().sort((a,b)=>+new Date(a.observed_at)-+new Date(b.observed_at));
-    const o = rowsOfficial.slice().sort((a,b)=>+new Date(a.observed_at)-+new Date(b.observed_at));
+    const m = rowsManual.slice().sort((a, b) => +new Date(a.observed_at) - +new Date(b.observed_at));
+    const o = rowsOfficial.slice().sort((a, b) => +new Date(a.observed_at) - +new Date(b.observed_at));
 
     const formatKey = (iso: string) => {
       const d = new Date(iso);
-      if (days <= 3) return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-      if (days <= 30) return d.toLocaleString(undefined, { month: '2-digit', day: '2-digit', hour: '2-digit' });
+      if (days <= 3) return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+      if (days <= 30) return d.toLocaleString(undefined, { month: "2-digit", day: "2-digit", hour: "2-digit" });
       return d.toLocaleDateString();
     };
 
-    const map = new Map<string, { t: string; minutesManual?: number; minutesOfficial?: number }>();
-    for (const x of m) {
-      const t = formatKey(x.observed_at);
-      const cur = map.get(t) || { t };
-      cur.minutesManual = x.wait_minutes;
-      map.set(t, cur);
-    }
-    for (const x of o) {
-      const t = formatKey(x.observed_at);
-      const cur = map.get(t) || { t };
-      cur.minutesOfficial = x.wait_minutes;
-      map.set(t, cur);
-    }
-    return [...map.values()].sort((a,b)=>a.t.localeCompare(b.t));
+    const map = new Map<number, { t: string; minutesManual?: number; minutesOfficial?: number }>();
+    const add = (
+      x: { observed_at: string; wait_minutes: number },
+      field: "minutesManual" | "minutesOfficial"
+    ) => {
+      const ts = +new Date(x.observed_at);
+      const cur = map.get(ts) || { t: formatKey(x.observed_at) };
+      cur[field] = x.wait_minutes;
+      map.set(ts, cur);
+    };
+
+    for (const x of m) add(x, "minutesManual");
+    for (const x of o) add(x, "minutesOfficial");
+
+    return [...map.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([, v]) => v);
   }, [rowsManual, rowsOfficial, days]);
 
   return (
