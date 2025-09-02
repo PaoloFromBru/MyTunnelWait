@@ -53,42 +53,52 @@ export async function GET(req: NextRequest) {
         }
         return NextResponse.json({ from, to, heatmap: heat });
       } else {
-        // heatmap_wait: aggregate median wait by dow/hour using manual_measurements (+ queue_readings if available)
-        const sums = new Map<string, { sum: number; n: number }>();
+        // heatmap_wait: per bucket, take the maximum wait between manual measurements and queue readings
+        const maxes = new Map<string, number>();
 
         // Manual measurements
         {
-          const { data, error } = await sb.rpc('measure_wait_bins_15min', { p_from: from, p_to: to, p_tunnel: tunnel ?? null, p_direction: directionDb ?? null });
+          const { data, error } = await sb.rpc('measure_wait_bins_15min', {
+            p_from: from,
+            p_to: to,
+            p_tunnel: tunnel ?? null,
+            p_direction: directionDb ?? null,
+          });
           if (error) throw error;
           for (const r of (data as any[]) || []) {
             const dt = new Date(r.time_bin);
-            const brussels = new Date(dt.toLocaleString('en-US', { timeZone: 'Europe/Brussels' }));
+            const brussels = new Date(
+              dt.toLocaleString('en-US', { timeZone: 'Europe/Brussels' })
+            );
             const dow = brussels.getDay();
             const hour = brussels.getHours();
             const key = `${dow}:${hour}`;
             const v = Number(r.p50_wait) || 0;
-            const cnt = Number(r.n) || 1;
-            const cur = sums.get(key) || { sum: 0, n: 0 };
-            cur.sum += v * cnt; cur.n += cnt;
-            sums.set(key, cur);
+            const cur = maxes.get(key) || 0;
+            if (v > cur) maxes.set(key, v);
           }
         }
 
         // Queue readings (TomTom) — optional
         {
-          const { data, error } = await sb.rpc('queue_wait_bins_15min', { p_from: from, p_to: to, p_tunnel: tunnel ?? null, p_direction: directionDb ?? null });
+          const { data, error } = await sb.rpc('queue_wait_bins_15min', {
+            p_from: from,
+            p_to: to,
+            p_tunnel: tunnel ?? null,
+            p_direction: directionDb ?? null,
+          });
           if (!error && Array.isArray(data)) {
             for (const r of data as any[]) {
               const dt = new Date(r.time_bin);
-              const brussels = new Date(dt.toLocaleString('en-US', { timeZone: 'Europe/Brussels' }));
+              const brussels = new Date(
+                dt.toLocaleString('en-US', { timeZone: 'Europe/Brussels' })
+              );
               const dow = brussels.getDay();
               const hour = brussels.getHours();
               const key = `${dow}:${hour}`;
               const v = Number(r.p50_wait) || 0;
-              const cnt = Number(r.n) || 1;
-              const cur = sums.get(key) || { sum: 0, n: 0 };
-              cur.sum += v * cnt; cur.n += cnt;
-              sums.set(key, cur);
+              const cur = maxes.get(key) || 0;
+              if (v > cur) maxes.set(key, v);
             }
           }
         }
@@ -97,8 +107,7 @@ export async function GET(req: NextRequest) {
         for (let d = 0; d < 7; d++) {
           for (let h = 0; h < 24; h++) {
             const key = `${d}:${h}`;
-            const agg = sums.get(key);
-            const minutes = agg && agg.n ? Math.round(agg.sum / agg.n) : 0;
+            const minutes = Math.round(maxes.get(key) || 0);
             heat.push({ dow: d, hour: h, minutes });
           }
         }
