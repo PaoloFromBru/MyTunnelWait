@@ -100,9 +100,15 @@ export default function Home() {
           <Card title="Grafico" href="/chart" desc="Andamento dell’attesa nel tempo." emoji="📈" />
         </section>
 
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card title="Storico" href="/history" desc="Riepilogo per giorno, tunnel e direzione." emoji="🗂️" />
           <Card title="Sorgenti online" href="/sources" desc="Link rapidi a siti ufficiali e feed." emoji="🌐" />
+          <Card
+            title="Modalità aereo"
+            href="/airplane-mode"
+            desc="Ricevi un promemoria quando ti avvicini al confine svizzero."
+            emoji="✈️"
+          />
         </section>
       </main>
       <Footer />
