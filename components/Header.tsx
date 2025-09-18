@@ -51,6 +51,13 @@ export default function Header() {
           <Link href="/log" className={linkCls("/log")} aria-current={isActive("/log") ? "page" : undefined}>Log</Link>
           <Link href="/chart" className={linkCls("/chart")} aria-current={isActive("/chart") ? "page" : undefined}>Grafico</Link>
           <Link href="/plan" className={linkCls("/plan")} aria-current={isActive("/plan") ? "page" : undefined}>Plan</Link>
+          <Link
+            href="/airplane-mode"
+            className={linkCls("/airplane-mode")}
+            aria-current={isActive("/airplane-mode") ? "page" : undefined}
+          >
+            Modalità aereo
+          </Link>
           <Link href="/history" className={linkCls("/history")} aria-current={isActive("/history") ? "page" : undefined}>Storico</Link>
           <Link href="/sources" className={linkCls("/sources")} aria-current={isActive("/sources") ? "page" : undefined}>Online</Link>
         </nav>
@@ -105,6 +112,9 @@ export default function Header() {
               <Link href="/log" className={linkCls("/log")} onClick={() => setOpen(false)}>Log</Link>
               <Link href="/chart" className={linkCls("/chart")} onClick={() => setOpen(false)}>Grafico</Link>
               <Link href="/plan" className={linkCls("/plan")} onClick={() => setOpen(false)}>Plan</Link>
+              <Link href="/airplane-mode" className={linkCls("/airplane-mode")} onClick={() => setOpen(false)}>
+                Modalità aereo
+              </Link>
               <Link href="/history" className={linkCls("/history")} onClick={() => setOpen(false)}>Storico</Link>
               <Link href="/sources" className={linkCls("/sources")} onClick={() => setOpen(false)}>Online</Link>
             </nav>
