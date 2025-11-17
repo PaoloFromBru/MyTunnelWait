@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "cron:ping": "node scripts/ping.js"
+    "cron:ping": "node scripts/ping.js",
+    "rollups:refresh": "node scripts/refresh-rollups.mjs"
   },
   "engines": {
     "node": ">=18"
