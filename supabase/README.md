@@ -45,7 +45,26 @@ Supabase SQL editor. It prevents recurrence by:
   `traffic_situations.raw` on future writes;
 - scheduling nightly bounded retention for raw operational tables and extension logs;
 - scheduling weekly `vacuum (analyze)` on the two tables that previously accumulated large TOAST;
+- scheduling an hourly database-size alert check at 350 MB;
 - exposing `select * from public.database_size_guardrail();` for a quick size/status check.
 
 The app should store normalized wait values and metadata only. Full provider responses are for
 temporary debugging, not production persistence.
+
+To enable alert delivery, configure a webhook endpoint after running the SQL:
+
+```sql
+update public.storage_alert_config
+set webhook_url = 'https://your-alert-webhook.example/path',
+    enabled = true
+where id = 1;
+```
+
+Then verify manually:
+
+```sql
+select * from public.check_database_size_alert();
+```
+
+The scheduled job is named `storage-guardrails-size-alert` and runs hourly. It sends at most one
+alert per 24 hours while the database remains above the configured threshold.
