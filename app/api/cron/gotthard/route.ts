@@ -21,7 +21,6 @@ function toRecord(s: SituationLite) {
     roads: s.roadNames ?? null,
     location: s.locationSummary ?? null,
     source: "opentransport",
-    raw: s.raw,
   };
 }
 

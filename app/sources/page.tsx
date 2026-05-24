@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Footer from "@/components/Footer";
+import { readLocalStorage, writeLocalStorage } from "@/lib/browserStorage";
 import type { WaitItem } from "@/types";
 
 const STORAGE_KEY = "mtw.waits.v1";
@@ -88,7 +89,7 @@ export default function SourcesPage() {
 
   function loadExisting(): WaitItem[] {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = readLocalStorage(STORAGE_KEY);
       return raw ? JSON.parse(raw) : [];
     } catch {
       return [];
@@ -114,7 +115,7 @@ export default function SourcesPage() {
       if (shouldAdd(e)) next.unshift(e);
     }
 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    writeLocalStorage(STORAGE_KEY, JSON.stringify(next));
     return next.length - existing.length; // numero di righe aggiunte
   }
 

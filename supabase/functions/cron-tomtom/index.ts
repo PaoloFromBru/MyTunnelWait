@@ -72,8 +72,8 @@ async function sampleTunnel(key: keyof typeof TUNNELS) {
   if (cfg.axis==='NS') { dirAB='N2S'; dirBA='S2N' } else { dirAB='E2W'; dirBA='W2E' }
 
   const rows = [] as Array<any>
-  rows.push({ observed_at: now, direction: dirAB, wait_minutes: waitAB, source:'tomtom', confidence:0.7, location: cfg.name, lane: cfg.lane ?? null, raw_payload: { provider:'tomtom', points: ptsAB, flows: flowsAB } })
-  rows.push({ observed_at: now, direction: dirBA, wait_minutes: waitBA, source:'tomtom', confidence:0.7, location: cfg.name, lane: cfg.lane ?? null, raw_payload: { provider:'tomtom', points: ptsBA, flows: flowsBA } })
+  rows.push({ observed_at: now, direction: dirAB, wait_minutes: waitAB, source:'tomtom', confidence:0.7, location: cfg.name, lane: cfg.lane ?? null })
+  rows.push({ observed_at: now, direction: dirBA, wait_minutes: waitBA, source:'tomtom', confidence:0.7, location: cfg.name, lane: cfg.lane ?? null })
   return rows
 }
 
@@ -105,4 +105,3 @@ Deno.serve( async (req: Request) => {
     return json({ ok:false, error: e?.message || String(e) }, 500)
   }
 })
-

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { readLocalStorage, writeLocalStorage } from "@/lib/browserStorage";
 import type { WaitItem, TunnelId } from "@/types";
 
 const STORAGE_KEY = "mtw.waits.v1";
@@ -135,7 +136,7 @@ function parseCSV(raw: string): Partial<WaitItem>[] {
 
 function loadExisting(): WaitItem[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = readLocalStorage(STORAGE_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -194,7 +195,7 @@ export default function ImportExport({ onAfterImport }: Props) {
       ? dedupMerge([], incoming)
       : dedupMerge(existing, incoming);
 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    writeLocalStorage(STORAGE_KEY, JSON.stringify(next));
     setStatus(`Import OK: ${incoming.length} righe lette • Totale archivio = ${next.length}`);
     onAfterImport?.(next);
   };

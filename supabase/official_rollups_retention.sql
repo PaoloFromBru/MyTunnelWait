@@ -85,14 +85,22 @@ $$;
 
 -- 3) Retention jobs ---------------------------------------------------------
 create or replace function public.prune_old_data(
-  keep_raw_days integer default 120,
-  keep_15min_days integer default 270,
-  keep_hourly_days integer default 730
+  keep_raw_days integer default 14,
+  keep_15min_days integer default 90,
+  keep_hourly_days integer default 365,
+  keep_queue_days integer default 60
 ) returns void language plpgsql as $$
 begin
   -- Raw DATEX records: traffic_records + optional snapshots tables
   delete from public.traffic_records
   where validity_start < now() - make_interval(days => keep_raw_days);
+
+  -- TomTom queue readings. Historical trends should come from rollups, not raw payload rows.
+  if to_regclass('public.queue_readings') is not null then
+    execute 'delete from public.queue_readings
+             where observed_at < now() - make_interval(days => $1)'
+    using keep_queue_days;
+  end if;
 
   -- 15-min aggregates
   delete from public.official_wait_15min

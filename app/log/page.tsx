@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Footer from "@/components/Footer";
 import Link from "next/link";
+import { readLocalStorage, writeLocalStorage } from "@/lib/browserStorage";
 import { SAMPLE_DATA } from "@/lib/sample";
 import type { TunnelId, WaitItem } from "@/types";
 
@@ -98,7 +99,7 @@ export default function LogPage() {
       setItems(out);
     } catch (e) {
       // fallback: lascia eventuale cache locale oppure sample
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = readLocalStorage(STORAGE_KEY);
       if (raw) {
         try { setItems(JSON.parse(raw)); return; } catch {}
       }
@@ -116,7 +117,7 @@ export default function LogPage() {
   }, [tunnel]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+    writeLocalStorage(STORAGE_KEY, JSON.stringify(items));
   }, [items]);
 
   const addItem = async () => {

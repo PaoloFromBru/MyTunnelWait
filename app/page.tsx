@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Footer from "@/components/Footer";
 import type { WaitItem, TunnelId } from "@/types";
 import Link from "next/link";
+import { readLocalStorage } from "@/lib/browserStorage";
 
 const STORAGE_KEY = "mtw.waits.v1";
 
@@ -23,7 +24,7 @@ export default function Home() {
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = readLocalStorage(STORAGE_KEY);
       setItems(raw ? JSON.parse(raw) : []);
     } catch {
       setItems([]);

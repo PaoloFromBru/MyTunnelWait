@@ -34,7 +34,6 @@ export async function GET(req: Request) {
         source: "tomtom:fusion",
         wait_minutes: north.waitMinutes,
         method: north.method,
-        raw: north.raw,
       });
     }
     if (south) {
@@ -44,7 +43,6 @@ export async function GET(req: Request) {
         source: "tomtom:fusion",
         wait_minutes: south.waitMinutes,
         method: south.method,
-        raw: south.raw,
       });
     }
 
@@ -58,4 +56,3 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: String(e?.message ?? e) }, { status: 500 });
   }
 }
-

@@ -24,3 +24,28 @@ your Supabase project:
 
 Following these steps keeps the operational database under the desired size while surfacing the new
 CLI for manual backfills when needed.
+
+## Emergency storage cleanup
+
+If Supabase blocks the project because the database is over quota, run
+[`supabase/emergency_storage_cleanup.sql`](./emergency_storage_cleanup.sql) in the Supabase SQL
+editor. It reports the largest tables, backfills compact official wait rollups, removes old raw
+DATEX/TomTom rows, strips historical JSON payload blobs, and analyzes the affected tables.
+
+If the quota page still shows the old size after deletes, run the `vacuum (full, analyze)` statements
+at the bottom of that file one by one. They reclaim physical disk space but take exclusive locks
+while each table is processed.
+
+## Storage guardrails
+
+After cleanup, run [`supabase/storage_guardrails.sql`](./storage_guardrails.sql) once in the
+Supabase SQL editor. It prevents recurrence by:
+
+- installing triggers that strip `queue_readings.raw_payload`, `queue_readings.raw`, and
+  `traffic_situations.raw` on future writes;
+- scheduling nightly bounded retention for raw operational tables and extension logs;
+- scheduling weekly `vacuum (analyze)` on the two tables that previously accumulated large TOAST;
+- exposing `select * from public.database_size_guardrail();` for a quick size/status check.
+
+The app should store normalized wait values and metadata only. Full provider responses are for
+temporary debugging, not production persistence.
